@@ -1,0 +1,22 @@
+[bibtex]
+@misc{rota2025unreflectanythingrgbonlyhighlightremoval,
+      title={UnReflectAnything: RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision}, 
+      author={Alberto Rota and Mert Kiray and Mert Asim Karaoglu and Patrick Ruhkamp and Elena De Momi and Nassir Navab and Benjamin Busam},
+      year={2025},
+      eprint={2512.09583},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2512.09583}, 
+}
+
+[apa]
+Rota, A., Kiray, M., Karaoglu, M. A., Ruhkamp, P., De Momi, E., Navab, N., & Busam, B. (2024). UnReflectAnything: Removing Specular Reflections from RGB Images. arXiv preprint. https://github.com/alberto-rota/UnReflectAnything
+
+[mla]
+Rota, Alberto, et al. "UnReflectAnything: Removing Specular Reflections from RGB Images." arXiv preprint, 2024, https://github.com/alberto-rota/UnReflectAnything.
+
+[ieee]
+A. Rota, M. Kiray, M. A. Karaoglu, P. Ruhkamp, E. De Momi, N. Navab, and B. Busam, "UnReflectAnything: Removing Specular Reflections from RGB Images," arXiv preprint, 2024. [Online]. Available: https://github.com/alberto-rota/UnReflectAnything
+
+[plain]
+Alberto Rota, Mert Kiray, Mert Asim Karaoglu, Patrick Ruhkamp, Elena De Momi, Nassir Navab, and Benjamin Busam. "UnReflectAnything: Removing Specular Reflections from RGB Images." arXiv preprint, 2024. https://github.com/alberto-rota/UnReflectAnything

@@ -1,0 +1,720 @@
+"""
+Initialization utilities for the Trainer class.
+Contains functions to initialize various components of the training pipeline.
+"""
+
+import contextlib
+import datetime
+import io
+import json
+import os
+import re
+
+import pandas as pd
+import torch
+import torchvision
+
+import optimization
+import wandb as weightsandbiases
+from logger import get_logger
+from utilities.model import DataParallelWrapper
+
+logger = get_logger(__name__)
+
+
+def device_and_directories(config):
+    """Initialize device and create necessary directories. Branch on config.DISTRIBUTE."""
+    distribute = config.get("DISTRIBUTE", "single")
+    if distribute == "ddp":
+        device = torch.device(f"cuda:{config.LOCAL_RANK}")
+    elif distribute == "dp" and torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        device = torch.device("cuda:0")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Get runs directory from config, with fallback to default
+    runs_dir = os.path.expandvars(
+        os.getenv(
+            "RESULTS_DIR",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "../runs"),
+        )
+    )
+
+    # Create runs directory if it doesn't exist
+    if not os.path.exists(runs_dir):
+        os.makedirs(runs_dir)
+
+    return {"device": device, "runs_dir": runs_dir}
+
+
+def dataloaders(dataset, config):
+    """Initialize datasets and dataloaders. Use DistributedSampler when config.DISTRIBUTE == 'ddp'."""
+    from torch.utils.data.distributed import DistributedSampler
+
+    training_ds = dataset["Training"]
+    validation_ds = dataset["Validation"]
+    test_ds = dataset["Test"]
+    workers = dataset["workers"]
+    batch_size = config["BATCH_SIZE"]
+    shuffle = config["SHUFFLE"]
+
+    distribute = config.get("DISTRIBUTE", "single")
+    if distribute == "ddp":
+        rank = config["RANK"]
+        world_size = config["WORLD_SIZE"]
+        training_sampler = DistributedSampler(
+            training_ds, num_replicas=world_size, rank=rank, shuffle=shuffle
+        )
+        validation_sampler = DistributedSampler(
+            validation_ds, num_replicas=world_size, rank=rank, shuffle=False
+        )
+        training_dl = torch.utils.data.DataLoader(
+            training_ds,
+            batch_size=batch_size,
+            sampler=training_sampler,
+            shuffle=False,
+            num_workers=config.get("NUM_WORKERS", 0),
+            pin_memory=config.get("PIN_MEMORY", False),
+            drop_last=True,
+            prefetch_factor=config.get("PREFETCH_FACTOR", 2) if config.get("NUM_WORKERS", 0) > 0 else None,
+        )
+        validation_dl = torch.utils.data.DataLoader(
+            validation_ds,
+            batch_size=batch_size,
+            sampler=validation_sampler,
+            shuffle=False,
+            num_workers=config.get("NUM_WORKERS", 0),
+            pin_memory=config.get("PIN_MEMORY", False),
+            drop_last=True,
+            prefetch_factor=config.get("PREFETCH_FACTOR", 2) if config.get("NUM_WORKERS", 0) > 0 else None,
+        )
+        return {
+            "dataset": {
+                "Training": training_ds,
+                "Validation": validation_ds,
+                "Test": test_ds,
+            },
+            "workers": workers,
+            "training_dl": training_dl,
+            "validation_dl": validation_dl,
+            "training_sampler": training_sampler,
+        }
+    # singlegpu or dp
+    training_dl = torch.utils.data.DataLoader(
+        training_ds, batch_size=batch_size, shuffle=shuffle
+    )
+    validation_dl = torch.utils.data.DataLoader(
+        validation_ds, batch_size=batch_size, shuffle=shuffle
+    )
+    return {
+        "dataset": {
+            "Training": training_ds,
+            "Validation": validation_ds,
+            "Test": test_ds,
+        },
+        "workers": workers,
+        "training_dl": training_dl,
+        "validation_dl": validation_dl,
+        "training_sampler": None,
+    }
+
+
+def dimensions(training_dl, config):
+    """Extract dimensions from the training data"""
+    # Extract frame dimensions
+
+    input_shape = next(iter(training_dl))[
+        "raw"
+    ].shape  # [batch_size, channels, height, width]
+    sample_shape = next(iter(training_dl))["raw"].shape[1:]  # [channels, height, width]
+    height = sample_shape[-2]  # Image height
+    width = sample_shape[-1]  # Image width
+    channels = 3  # Number of image channels
+    batch_size = next(iter(training_dl))["raw"].shape[0]  # Batch size
+
+    return {
+        "input_shape": input_shape,
+        "sample_shape": sample_shape,
+        "height": height,
+        "width": width,
+        "channels": channels,
+        "batch_size": batch_size,
+    }
+
+
+def hyperparameters(config):
+    """Initialize training hyperparameters"""
+    # Optimizer parameters
+    momentum = config.get("MOMENTUM", 0)  # Momentum for optimizer, default to 0
+    learning_rate = config.get(
+        "LEARNING_RATE", 1e-3
+    )  # Learning rate for optimizer, default to 1e-3
+    weight_decay = config.get(
+        "WEIGHT_DECAY", 0
+    )  # Weight decay for optimizer, default to 0
+    epochs = config.get("EPOCHS", 10)  # Number of training epochs, default to 10
+    lastepoch = 0  # Initialize the last epoch
+
+    # Training control parameters
+    earlystopping_patience = config.get(
+        "EARLY_STOPPING_PATIENCE", 5
+    )  # Early stopping patience, default to 5 epochs
+    actual_epoch_time = 0  # Initialize actual epoch time
+    optimizer_bootstrap_name = config.get(
+        "OPTIMIZER_BOOTSTRAP_NAME", "Adam"
+    )  # Optimizer name for bootstrapping, default to 'Adam'
+    optimizer_refining_name = config.get(
+        "OPTIMIZER_REFINING_NAME", config.get("OPTIMIZER_BOOTSTRAP_NAME")
+    )  # Optimizer name for refining, default to 'Adam'
+    gradient_accumulation_steps = config.get(
+        "GRADIENT_ACCUMULATION_STEPS", 1
+    )  # Gradient accumulation steps, default to 1
+    warmup_steps = config.get(
+        "WARMUP", 0
+    )  # Warmup steps for learning rate, default to 0
+    depth_scale_factor = config.get(
+        "DEPTH_SCALE_FACTOR", 40
+    )  # Depth scale factor, default to 40
+    sift_patch_search_area = config.get(
+        "REFINEMENT_AREA", 8
+    )  # SIFT patch search area, default to 3
+    switch_optimizer_epoch = config.get(
+        "SWITCH_OPTIMIZER_EPOCH", 100
+    )  # Epoch to switch optimizer, default to 2
+
+    # Phase tracking
+    in_swa_phase = False
+    in_optswitch_phase = False
+
+    # Other parameters
+    logfreq_wandb = config.get("LOG_FREQ_WANDB", 1)
+    logfreq_rerun = config.get("LOG_FREQ_RERUN", 1)
+
+    return {
+        "momentum": momentum,
+        "learning_rate": learning_rate,
+        "weight_decay": weight_decay,
+        "epochs": epochs,
+        "lastepoch": lastepoch,
+        "earlystopping_patience": earlystopping_patience,
+        "actual_epoch_time": actual_epoch_time,
+        "optimizer_bootstrap_name": optimizer_bootstrap_name,
+        "optimizer_refining_name": optimizer_refining_name,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "warmup_steps": warmup_steps,
+        "depth_scale_factor": depth_scale_factor,
+        "sift_patch_search_area": sift_patch_search_area,
+        "switch_optimizer_epoch": switch_optimizer_epoch,
+        "in_swa_phase": in_swa_phase,
+        "in_optswitch_phase": in_optswitch_phase,
+        "logfreq_wandb": logfreq_wandb,
+        "logfreq_rerun": logfreq_rerun,
+    }
+
+
+def optimizers(model, config):
+    """Initialize optimizers and related components
+
+    Each component must have an explicit learning rate specified:
+    - RGB_ENCODER_LR: Learning rate for RGB encoder (DINOv3)
+    - TOKEN_INPAINTER_LR: Learning rate for token inpainter
+    - DECODER_LR: Learning rate for each decoder (specified per decoder)
+
+    If a component's LR is set to 0.0, that component will be frozen.
+    If a component's LR is None, an error will be raised.
+    """
+    # Main optimizer
+    logger.set_context("OPTIMIZATION")
+    optimizer_class = getattr(optimization, config.get("OPTIMIZER_BOOTSTRAP_NAME"))
+    weight_decay = config.get("WEIGHT_DECAY")
+
+    # Get learning rates directly from config (consistent access pattern)
+    encoder_lr = config.MODEL.RGB_ENCODER.RGB_ENCODER_LR
+    token_lr = config.MODEL.TOKEN_INPAINTER.TOKEN_INPAINTER_LR
+
+    # Get decoder-specific learning rates from config
+    decoder_lrs = {}
+    decoders_config = config.MODEL.DECODERS
+    for decoder_name in decoders_config.keys():
+        decoder_lr = decoders_config[decoder_name].DECODER_LR
+        decoder_lrs[decoder_name] = decoder_lr
+    # Validate that all components have explicit learning rates
+    missing_lrs = []
+    if encoder_lr is None:
+        missing_lrs.append("RGB_ENCODER_LR")
+    if token_lr is None:
+        missing_lrs.append("TOKEN_INPAINTER_LR")
+    for decoder_name, decoder_lr in decoder_lrs.items():
+        if decoder_lr is None:
+            missing_lrs.append(f"DECODER_LR for '{decoder_name}'")
+
+    if missing_lrs:
+        raise ValueError(
+            f"All components must have explicit learning rates specified. "
+            f"Missing learning rates for: {', '.join(missing_lrs)}. "
+            f"Please set these in the config file. Use 0.0 to freeze a component."
+        )
+
+    # Build param groups deterministically.
+    # Unwrap DataParallel, DDP, and DataParallelWrapper so parameter names match the real model (no "module." prefix).
+    effective_model = model
+    if isinstance(model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+        effective_model = model.module
+    if isinstance(effective_model, DataParallelWrapper):
+        effective_model = effective_model._modules.get("module", effective_model)
+    encoder_params = []
+    token_params = []
+    decoder_param_groups = {}  # decoder_name -> list of params
+
+    for name, p in effective_model.named_parameters():
+        # if not p.requires_grad:
+        #     continue
+        if name.startswith("dinov3."):
+            encoder_params.append(p)
+        elif name.startswith("token_inpaint."):
+            token_params.append(p)
+        elif name.startswith("decoders."):
+            # Extract decoder name from parameter name (format: "decoders.{decoder_name}.{rest}")
+            parts = name.split(".")
+            if len(parts) >= 2:
+                decoder_name = parts[1]
+                # All decoders must have explicit LR (already validated above)
+                if decoder_name not in decoder_param_groups:
+                    decoder_param_groups[decoder_name] = []
+                decoder_param_groups[decoder_name].append(p)
+            else:
+                raise ValueError(f"Unexpected decoder parameter name format: {name}")
+        else:
+            # Other parameters (shouldn't exist, but handle gracefully)
+            logger.warning(
+                f"Parameter '{name}' does not belong to any recognized component. "
+                f"It will not be included in optimizer parameter groups."
+            )
+
+    # Build parameter groups list with component names for tracking
+    param_groups = []
+    param_group_components = []  # Track which component each group belongs to
+
+    # Add encoder group if it has parameters and LR is not 0.0
+    if len(encoder_params) > 0:
+        if encoder_lr == 0.0:
+            # Double-check: encoder should already be frozen, but ensure it
+            for p in encoder_params:
+                p.requires_grad = False
+            # logger.info("RGB Encoder: FROZEN (RGB_ENCODER_LR=0.0)")
+        else:
+            param_groups.append(
+                {
+                    "params": encoder_params,
+                    "lr": encoder_lr,
+                    "weight_decay": weight_decay,
+                }
+            )
+            param_group_components.append("RGB Encoder")
+            # logger.info(f"RGB Encoder: LR={encoder_lr:.2e}")
+
+    # Add token inpainter group if it has parameters and LR is not 0.0
+    if len(token_params) > 0:
+        if token_lr == 0.0:
+            # Freeze token inpainter
+            for p in token_params:
+                p.requires_grad = False
+            # logger.info("Token Inpainter: FROZEN (TOKEN_INPAINTER_LR=0.0)")
+        else:
+            param_groups.append(
+                {
+                    "params": token_params,
+                    "lr": token_lr,
+                    "weight_decay": weight_decay,
+                }
+            )
+            param_group_components.append("Token Inpainter")
+            # logger.info(f"Token Inpainter: LR={token_lr:.2e}")
+
+    # Add decoder groups with their specific learning rates
+    for decoder_name, decoder_params in decoder_param_groups.items():
+        if len(decoder_params) > 0:
+            decoder_lr = decoder_lrs[decoder_name]  # Already validated to be non-None
+            if decoder_lr == 0.0:
+                # Double-check: decoder should already be frozen, but ensure it
+                for p in decoder_params:
+                    p.requires_grad = False
+                # logger.info(f"Decoder '{decoder_name}': FROZEN (DECODER_LR=0.0)")
+            else:
+                param_groups.append(
+                    {
+                        "params": decoder_params,
+                        "lr": decoder_lr,
+                        "weight_decay": weight_decay,
+                    }
+                )
+                param_group_components.append(f"Decoder '{decoder_name}'")
+                # logger.info(f"Decoder '{decoder_name}': LR={decoder_lr:.2e}")
+
+    # Create optimizer with parameter groups
+    if len(param_groups) == 0:
+        # All components are frozen - create optimizer with empty param groups
+        logger.warning(
+            "All components are frozen (LR=0.0). Optimizer will have no trainable parameters."
+        )
+        optimizer = optimizer_class(
+            [], lr=1e-6, weight_decay=weight_decay
+        )  # Dummy LR for empty optimizer
+    else:
+        optimizer = optimizer_class(param_groups)
+
+    # Print learning rate summary after optimizer initialization
+
+    # RGB Encoder
+    if encoder_lr == 0.0:
+        logger.info("RGB Encoder : FROZEN (LR=0.0)")
+    else:
+        logger.info(f"RGB Encoder : LR={encoder_lr:.2e}")
+
+    # Token Inpainter
+    if token_lr == 0.0:
+        logger.info("Token Inpainter : FROZEN (LR=0.0)")
+    else:
+        logger.info(f"Token Inpainter : LR={token_lr:.2e}")
+
+    # Decoders
+    for decoder_name in sorted(decoder_lrs.keys()):
+        decoder_lr = decoder_lrs[decoder_name]
+        if decoder_lr == 0.0:
+            logger.info(f"Decoder '{decoder_name}': FROZEN (LR=0.0)")
+        else:
+            logger.info(f"Decoder '{decoder_name}': LR={decoder_lr:.2e}")
+
+    # Verify optimizer parameter groups match
+    logger.info(f"Optimizer parameter groups: {len(optimizer.param_groups)}")
+    for i, group in enumerate(optimizer.param_groups):
+        num_params = sum(p.numel() for p in group["params"])
+        component_name = (
+            param_group_components[i] if i < len(param_group_components) else "Unknown"
+        )
+        logger.info(
+            f"Group {i} ({component_name}): LR={group['lr']:.2e}, Params={num_params:,}, Weight Decay={group.get('weight_decay', 0.0)}"
+        )
+
+    # Gradient scaler for mixed precision
+    scaler = torch.amp.GradScaler(
+        "cuda" if torch.cuda.is_available() else "cpu", enabled=True
+    )
+
+    return {
+        "optimizer": optimizer,
+        "scaler": scaler,
+    }
+
+
+def schedulers(optimizer, config, training_dl):
+    """Initialize learning rate schedulers"""
+    scheduler_config = config.get("LR_SCHEDULER")
+    assert len(scheduler_config.keys()) == 2, (
+        "Only one scheduler (+OnPlateau)can be used at a time"
+    )
+
+    if scheduler_config.get("ONPLATEAU"):
+        onplateau_scheduler = scheduler_config.get("ONPLATEAU")
+        # Plateau scheduler
+        LRschedulerPlateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            "min",
+            patience=onplateau_scheduler["PATIENCE"],
+            factor=onplateau_scheduler["FACTOR"],
+        )
+    if scheduler_config.get("STEPWISE"):
+        stepwise_scheduler = scheduler_config.get("STEPWISE")
+        LRscheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=config["EPOCHS"]
+            * len(training_dl)
+            // stepwise_scheduler["N_STEPS"],
+            gamma=stepwise_scheduler["GAMMA"],
+        )
+    if scheduler_config.get("COSINE"):
+        cosine_scheduler = scheduler_config.get("COSINE")
+        batches_per_epoch = len(training_dl)  # int: number of batches per epoch
+        n_epochs = config.get("EPOCHS")  # int: number of epochs
+        n_periods = cosine_scheduler.get(
+            "N_PERIODS", 0.5
+        )  # int: number of cosine peaks
+        T_max = (
+            n_epochs * batches_per_epoch
+        ) // n_periods // 2 - 1  # int: steps per peak
+        cosine_scheduler = scheduler_config.get("COSINE")
+        LRscheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=T_max,  # T_max: int, number of steps per cosine cycle
+        )
+    if scheduler_config.get("EXPONENTIAL"):
+        exponential_scheduler = scheduler_config.get("EXPONENTIAL")
+        LRscheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer,
+            gamma=exponential_scheduler["GAMMA"],
+        )
+
+    return {
+        "LRscheduler": LRscheduler,
+        "LRschedulerPlateau": LRschedulerPlateau,
+    }
+
+
+def transforms(height, width):
+    """Initialize image transformations"""
+    imsavetransform = torchvision.transforms.Resize((256, 320), antialias=True)
+    trimtransform = torchvision.transforms.Compose(
+        [torchvision.transforms.Resize((height, width), antialias=True)]
+    )
+
+    return {
+        "imsavetransform": imsavetransform,
+        "trimtransform": trimtransform,
+    }
+
+
+def wandb(config, model=None, notes="", no_wandb=False, resume_wandb_run_id=None):
+    """
+    Initialize Weights & Biases tracking.
+
+    DDP invariant: wandb must only be initialized on rank 0. Non-zero ranks receive
+    {"wandb": None, "testtable": None}. All callers (Engine init, _reinitialize_wandb)
+    use this same function so the invariant holds.
+    """
+    if no_wandb:
+        return {"wandb": None, "testtable": None}
+    if config.get("DISTRIBUTE") == "ddp" and config.get("RANK", 0) != 0:
+        return {"wandb": None, "testtable": None}
+
+    # Find existing run if specified
+    logger.set_context("WANDB")
+
+    run_id = None
+    resume_run = None
+
+    # Check for resume wandb run ID first (from resume functionality)
+    if resume_wandb_run_id:
+        run_id = resume_wandb_run_id
+        logger.info(f"Attempting to resume wandb run with ID: {run_id}")
+
+        # Verify that the run exists before trying to resume
+        try:
+            api = weightsandbiases.Api()
+            existing_run = api.run(
+                f"{config.get('WANDB_ENTITY', 'unreflect-anything')}/{config.get('WANDB_PROJECT', 'UnReflectAnything')}/{run_id}"
+            )
+            if existing_run:
+                logger.info(f"Found existing wandb run to resume: {run_id}")
+                resume_run = True
+            else:
+                logger.warning(f"Wandb run {run_id} not found, will create new run")
+                resume_run = None
+                run_id = None
+        except Exception as e:
+            logger.warning(
+                f"Could not verify wandb run {run_id}: {e}. Will create new run"
+            )
+            resume_run = None
+            run_id = None
+    elif "RUN" in config:
+        try:
+            entity = config.get("WANDB_ENTITY", "unreflect-anything")
+            project = config.get("WANDB_PROJECT", "UnReflectAnything")
+            runs = weightsandbiases.Api().runs(
+                path=f"{entity}/{project}",
+                filters={"display_name": config["RUN"]},
+            )
+            if len(runs) > 0:
+                resume_run = runs
+                run_id = runs[0].id
+                logger.info("Found run to resume:", run_id)
+            else:
+                logger.warning(
+                    f"WandB run with display_name '{config['RUN']}' not found"
+                )
+                resume_run = None
+        except Exception as e:
+            logger.warning(f"Failed to query WandB for RUN '{config['RUN']}': {e}")
+            resume_run = None
+    else:
+        resume_run = None
+
+    # Initialize WandB
+    stderr_capture = io.StringIO()
+    with contextlib.redirect_stderr(stderr_capture):
+        wandb_instance = weightsandbiases.init(
+            entity=config.get("WANDB_ENTITY", "unreflect-anything"),
+            project=config.get("WANDB_PROJECT", "UnReflectAnything"),
+            config=config,
+            notes=notes,
+            resume=("must" if resume_run is not None else "allow"),
+            id=run_id,
+            settings=weightsandbiases.Settings(code_dir="."),
+        )
+
+    # Extract run links from stderr
+    captured_stderr = stderr_capture.getvalue()
+    url_pattern = r"https?://[^\s]+"
+    wandb_links = re.findall(url_pattern, captured_stderr)
+    try:
+        logger.info(
+            f"Created run [yellow]{wandb_instance.name}[/] in project [orange1]{wandb_instance.project}[/]"
+        )
+        logger.info("[yellow]󰙨 Wandb RUN    [/]:", wandb_links[3])
+        logger.info("[orange1]󱗼 Wandb PROJECT[/]:", wandb_links[2])
+    except Exception:
+        pass
+
+    # Define WandB metrics
+    _define_wandb_metrics()
+
+    # Initialize test table
+    testtable = weightsandbiases.Table(
+        columns=[
+            "Video",
+            "Batch",
+            "Loss",
+            "Precision",
+            "Recall",
+            "AUCPR",
+            "Epipolar",
+            "Fundamental",
+            "Inliers",
+            "MDistMean",
+        ]
+    )
+
+    # Model Watcher
+    wandb_instance.watch(model, log="all", log_freq=config["MODEL_WATCHER_FREQ_WANDB"])
+    return {"wandb": wandb_instance, "testtable": testtable}
+
+
+def _define_wandb_metrics():
+    """Define metric structures for WandB"""
+    # Step metrics
+    weightsandbiases.define_metric("Step/batch")
+    weightsandbiases.define_metric("Step/valbatch")
+    weightsandbiases.define_metric("Step/lossissues")
+    # Use generic test index as the grouping step; avoid static per-index metrics
+    # Individual test runs will be logged under Test/test_idx_NUM/* keys
+
+    # Group metrics by step
+    weightsandbiases.define_metric("Issues/*", step_metric="Step/lossissues")
+    weightsandbiases.define_metric("Training/*", step_metric="Step/batch")
+    weightsandbiases.define_metric("Gradients/*", step_metric="Step/batch")
+    weightsandbiases.define_metric("Validation/*", step_metric="Step/valbatch")
+    weightsandbiases.define_metric("HyperParameters/*", step_metric="Step/batch")
+    weightsandbiases.define_metric("Test/*", step_metric="Step/test_idx")
+
+    # Epoch metrics
+    weightsandbiases.define_metric("Step/epoch")
+    weightsandbiases.define_metric("Training/epoch*", step_metric="Step/epoch")
+    weightsandbiases.define_metric("Validation/epoch*", step_metric="Step/epoch")
+
+
+def setup_run_directories(runs_dir, wandb_instance=None, savelocally=False):
+    """Set up directories for storing run artifacts"""
+    # Get run name from wandb or generate a new one
+    runname = wandb_instance.name if wandb_instance is not None else None
+    if runname is None or runname == "":
+        runname = "offline_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Create run directory structure
+    run_dir = os.path.join(runs_dir, f"{runname}")
+    os.makedirs(run_dir, exist_ok=True)
+
+    paths_file = os.path.join(run_dir, "loadeddata.csv")
+
+    models_dir = os.path.join(run_dir, "models")
+    os.makedirs(models_dir, exist_ok=True)
+
+    test_dir = os.path.join(run_dir, "tests")
+    os.makedirs(os.path.join(test_dir), exist_ok=True)
+    logger.set_context("SAVE")
+    logger.info(" Run directory:", os.path.normpath(run_dir))
+    return {
+        "runname": runname,
+        "RUN_DIR": run_dir,
+        "paths_file": paths_file,
+        "MODELS_DIR": models_dir,
+        "TEST_DIR": test_dir,
+        "savelocally": savelocally,
+    }
+
+
+def earlystopping(patience, models_dir, runname=None):
+    """Initialize early stopping callback"""
+    earlystopping = optimization.EarlyStopping(
+        patience=patience,
+        verbose=True,
+        checkpointpath=models_dir,
+        runname=runname,
+    )
+
+    return {"earlystopping": earlystopping}
+
+
+def save_hyperparameters_json(run_dir, config):
+    """Save hyperparameters to disk"""
+    hyperparams_path = os.path.join(run_dir, "hyperparams.json")
+    config_path = os.path.join(run_dir, "config.json")
+
+    # Ensure the files exist
+    if not os.path.exists(hyperparams_path):
+        with open(hyperparams_path, "x"):
+            pass
+
+    if not os.path.exists(config_path):
+        with open(config_path, "x"):
+            pass
+
+    # Write the config to both files for compatibility
+    with open(hyperparams_path, "w") as f:
+        all_hyperparams = {"training": config}
+        json.dump(all_hyperparams, f, indent=4, skipkeys=True, default=str)
+
+    # Also save the config directly for resume functionality
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4, skipkeys=True, default=str)
+
+
+def tracking_metrics():
+    """Initialize step counters and metrics tracking"""
+    # Metric trend tracking
+    epoch_loss_trend_training = []
+    epoch_loss_trend_validation = []
+
+    # Summary metrics
+    summary_train = []
+    summary_val = []
+    summary_test = []
+
+    # Create dataframes for metrics
+    metrics = {
+        "Training": pd.DataFrame(),
+        "Validation": pd.DataFrame(),
+        "Test": pd.DataFrame(),
+    }
+
+    # Track loaded data
+    loaded_paths = []
+    startedat = datetime.datetime.now()
+
+    return {
+        "step": {
+            "Training_batch": 0,
+            "Validation_batch": 0,
+            "Test_batch": 0,
+            "epoch": 0,
+            "idx": 0,
+            "summary": 0,
+        },
+        "epoch_loss_trend_training": epoch_loss_trend_training,
+        "epoch_loss_trend_validation": epoch_loss_trend_validation,
+        "summary_train": summary_train,
+        "summary_val": summary_val,
+        "summary_test": summary_test,
+        "metrics": metrics,
+        "loaded_paths": loaded_paths,
+        "startedat": startedat,
+    }

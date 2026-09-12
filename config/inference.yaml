@@ -1,0 +1,30 @@
+# weights_path: run "unreflectanything download-weights" then use ~/.cache/unreflectanything/weights/ (or set path below)
+run: "gallant-bush-806"
+runs_dir: "/anvme/workspace/v120bb18-unreflectanything/runs"
+weights_path: "/anvme/workspace/v120bb18-unreflectanything/results/gallant-bush-806/models/full_model_weights.pt"
+
+model_config_path: "/anvme/workspace/v120bb18-unreflectanything/config/train.yaml"
+model_module: "models"
+input_dir: "/anvme/workspace/v120bb18-unreflectanything/benchmark/data/input"
+output_dir: "/anvme/workspace/v120bb18-unreflectanything/benchmark/data/OURS_L1"
+batch_size: 32
+num_workers: 4
+chunk_size: 8
+device: "cuda"
+image_extensions: [".png", ".jpg", ".jpeg"]
+resize_output: True
+brightness_threshold: 0.8
+inpaint_mask_dilation: 11
+monitor_usage: True
+composite: False  # If True, blend predicted diffuse with input RGB outside the highlight mask
+
+# serene-terrain-817   :  SoftTHR ablation - Rebuttal
+# smooth-vortex-816    :  Dice ablation - Rebuttal
+# super-microwave-815  :  TV ablation - Rebuttal
+# magic-brook-814      :  DWConv ablation - Rebuttal
+# faithful-music-813   :  Learned mask token ablation - Rebuttal
+# fresh-fire-811       :  Positional encoding ablation- Rebuttal
+# clean-haze-809       :  Spec ablation - Rebuttal
+# dainty-paper-808     :  Seam ablation - Rebuttal
+# leafy-glade-807      :  RGB ablation - Rebuttal
+# gallant-bush-806     :  L1 ablation - Rebuttal

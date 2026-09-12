@@ -1,0 +1,280 @@
+### OPTIMAL E2E CONFIG
+### Derived from analysis of the 4 wandb runs (snowy-glade-763, cool-forest-966,
+### cerulean-waterfall-1092, unique-sponge-1115). It reverts every change that the
+### analysis tied to the GOOD->WORSE regression back to the two GOOD runs' values, and
+### keeps the unique-sponge knobs (fusion=4 / detach=False / dropout=0 / high diffuse LR)
+### at their stable GOOD-run defaults to avoid the NaN-gradient failure.
+### Key reverts vs config/end2end.yaml (which was the WORST / unique-sponge recipe):
+###   SURFACE_ROUGHNESS [80,2000] -> 8 ; INTENSITY [0.5,1] -> [1,2]  (broad/strong highlights = the #1 cause)
+###   HIGHLIGHT_LOSS_WEIGHT 0 -> 1 ; highlight DECODER_LR 0 -> 5e-4   (re-enable+supervise the mask head)
+###   WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY 0.05 -> 1.0
+###   INPAINT_MASK_DILATION 9 -> 15 ; INPAINT_MASK_THRESHOLD 0.2 -> 0.3
+###   NUM_FUSION_BLOCKS_TRAINABLE 4 -> 1 ; DROPOUT 0 -> 0.1 ; DETACH_INPAINTED_TOKENS_FOR_DECODER False -> True
+###   diffuse DECODER_LR 2e-4 -> 1e-4 ; DIFFUSE_LOSS_WEIGHT 2 -> 1 ; WEIGHT_SEAM 0.1 -> 0.5 ; SEAM_WEIGHT_GRAD 0.5 -> 0
+###   LR_SCHEDULER COSINE -> STEPWISE+ONPLATEAU
+
+parameters:
+
+  ### MODEL ARCHITECTURE
+  MODEL:
+    value:
+      MODEL_CLASS: "UnReflect_Model_TokenInpainter"
+      MODEL_MODULE: "models"
+      DETACH_INPAINTED_TOKENS_FOR_DECODER: True  # GOOD-run default. False (unique-sponge) coupled the unfrozen decoder into the inpainter -> NaN.
+      RGB_ENCODER:
+        ENCODER: "facebook/dinov3-vitl16-pretrain-lvd1689m"
+        IMAGE_SIZE: 896
+        RETURN_SELECTED_LAYERS: [3, 6, 9, 12]
+        RGB_ENCODER_LR: 0.0  # frozen encoder
+      DECODERS:
+        diffuse:
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          FROM_PRETRAINED: "diffuse_decoder.pt"
+          USE_BN: False
+          DROPOUT: 0.1  # GOOD runs used 0.1; unique-sponge's 0 removed regularization and contributed to instability.
+          OUTPUT_IMAGE_SIZE: [896,896]
+          OUTPUT_CHANNELS: 3
+          DECODER_LR: 0.0001  # snowy=1e-4 (GOOD). Avoid 2e-4 (unique-sponge, NaN).
+          NUM_FUSION_BLOCKS_TRAINABLE: 1  # GOOD runs trained only the coarse fusion block. 4 (unique-sponge) overfit to identity + NaN.
+          TRAIN_RGB_HEAD: True
+        highlight:
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [96,192,384,768]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          FROM_PRETRAINED: "highlight_decoder.pt"
+          USE_BN: False
+          DROPOUT: 0.1
+          OUTPUT_IMAGE_SIZE: [896,896]
+          OUTPUT_CHANNELS: 1
+          DECODER_LR: 5.0e-4  # KEEP THE HEAD TRAINING. The head IS the inpaint mask source; freezing it (cerulean/unique-sponge=0) gave ~15x worse HighlightRegression.
+          NUM_FUSION_BLOCKS_TRAINABLE: null
+      TOKEN_INPAINTER:
+        TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"
+        TOKEN_INPAINTER_MODULE: "token_inpainters"
+        TOKEN_INPAINTER_LR: 1.0e-4  # cool-forest (GOOD). snowy froze it (0) and was still good; 1e-4 is the safer default.
+        DEPTH: 6
+        HEADS: 16
+        DROP: 0.05  # cool-forest (GOOD) used 0.05.
+        USE_POSITIONAL_ENCODING: True
+        USE_FINAL_NORM: True
+        USE_LOCAL_PRIOR: True
+        LOCAL_PRIOR_WEIGHT: 0.4   # 0.4-0.5 keeps healthy context blending. NOTE: prior-weight convention flipped at ecc80ad.
+        LOCAL_PRIOR_KERNEL: 5
+        SEED_NOISE_STD: 0.02
+
+  # FORWARD PASS PARAMETERS
+  INPAINT_MASK_THRESHOLD:
+    value: 0.3  # code default; reverted from 0.2.
+  INPAINT_MASK_DILATION:
+    value: 15  # GOOD runs used 15/17 (cover highlight halos). 3 (cerulean) left bright fringes. Must be odd.
+
+  # Token-inpainter mask polarity. False (default) = released-checkpoint-compatible
+  # *visibility* polarity used by ALL FOUR named runs. Set True ONLY for a fresh-from-scratch
+  # run to feed the design-correct raw mask (True=hole); it is INCOMPATIBLE with the released
+  # checkpoint. This is an A/B experiment, NOT the cause of the regression.
+  INPAINT_FEED_RAW_MASK:
+    value: False
+
+  USE_TORCH_COMPILE:
+    value: False
+  DISTRIBUTE:
+    value: "ddp"
+
+  ### DATA
+  DATASETS:
+    value:
+      SCRREAM:
+        VAL_SCENES: ["scene10", "scene04"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 6
+      HOUSECAT6D:
+        VAL_SCENES: ["val_scene1","val_scene2"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 4
+      CROMO:
+        TRAIN_SCENES: ["kitchen"]
+        VAL_SCENES: ["station"]
+        RESIZE_MODE: "resize"
+        SAMPLE_EVERY_N: 30
+      PSD:
+        TRAIN_SCENES: "PSD_Train"
+        VAL_SCENES: "PSD_Val"
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 1
+      SCARED:
+        VAL_SCENES: ["v22","v23","v24","v25","v26","v27","v28","v29","v30","v31","v32","v33","v34"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 8
+      STEREOMIS_TRACKING:
+        VAL_SCENES: ["P2_2"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 2
+      CHOLEC80:
+        TRAIN_SCENES: ["train"]
+        VAL_SCENES: ["test"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 40
+      SUNRGBD:
+        VAL_SCENES: ["realsense"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 4
+      OPENIMAGESV7:
+        TRAIN_SCENES: ["thescene"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 5
+      ENDOSYNTH:
+        TRAIN_SCENES: ["scene"]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 1
+      ALL_DATASETS:
+        FEW_IMAGES: False
+        TARGET_SIZE: [896,896]
+        LOAD_RGB_ONLY: True
+
+  BATCH_SIZE:
+    value: 8
+  NUM_WORKERS:
+    value: 12
+  SHUFFLE:
+    value: True
+  PIN_MEMORY:
+    value: True
+  PREFETCH_FACTOR:
+    value: 2
+
+  ### HIGHLIGHTS  --  THE most important reverts (primary regression cause)
+  MOGE_MODEL:
+    value: "Ruicheng/moge-2-vits-normal"
+  SURFACE_ROUGHNESS:
+    value: 8.0  # Both GOOD runs used 8 (broad, soft, realistic highlights). [80,2000] (both WORSE runs) = pinpoint specks -> model only learns to remove tiny dots.
+  INTENSITY:
+    value: [1.0, 2.0]  # Brackets snowy (1.5) and cool-forest (2.0). NOT [0.5,1] which dimmed highlights below realistic levels.
+  LIGHT_DISTANCE_RANGE:
+    value: [0.0, 1]
+  LIGHT_LEFT_RIGHT_ANGLE:
+    value: [0, 360]
+  LIGHT_ABOVE_BELOW_ANGLE:
+    value: [0, 360]
+  DATASET_HIGHLIGHT_DILATION:
+    value: 25
+  DATASET_HIGHLIGHT_THRESHOLD:
+    value: 0.85  # cool-forest (GOOD). 0.60 (cerulean) over-excluded real highlights from supervision.
+  DATASET_HIGHLIGHT_USE_LUMINANCE:
+    value: True
+  HIGHLIGHT_COLOR:
+    value: [1.0, 1.0, 1.0]
+  CLAMP_RECONSTRUCTION:
+    value: True
+
+  ### OPTIMIZATION
+  LEARNING_RATE:
+    value: 1.0e-3  # DEPRECATED base; per-module LRs above take effect.
+  WEIGHT_DECAY:
+    value: 0.0
+  EPOCHS:
+    value: 50
+  GRADIENT_ACCUMULATION_STEPS:
+    value: 1
+  WARMUP:
+    value: 400
+  GRADIENT_CLIPPING_MAX_NORM:
+    value: 8
+  LR_SCHEDULER:
+    value:
+      ONPLATEAU:
+        PATIENCE: 5
+        FACTOR: 0.1
+      STEPWISE:  # GOOD runs used STEPWISE+ONPLATEAU instead of COSINE.
+        GAMMA: 0.5
+        N_STEPS: 4
+
+  REAPPLY_LRS_ON_RESUME:
+    value: True
+
+  OPTIMIZER_BOOTSTRAP_NAME:
+    value: "AdamW"
+  EARLY_STOPPING_PATIENCE:
+    value: 20
+  SAVE_INTERVAL:
+    value: 1000
+
+  DATASET_HIGHLIGHT_SUPERVISION_THRESHOLD:
+    value: 0.1  # GOOD runs used 0.1 (cerulean/unique-sponge used 0.01).
+
+  ### LOSS WEIGHTS
+  SPECULAR_LOSS_WEIGHT:
+    value: 0.0
+  DIFFUSE_LOSS_WEIGHT:
+    value: 1.0  # snowy 0.5 / cool-forest 1.0. Avoid 2.0 (unique-sponge).
+  HIGHLIGHT_LOSS_WEIGHT:
+    value: 1.0  # Re-enabled (both WORSE runs set 0). Supervises the highlight-mask head that feeds the inpainter.
+  TOKEN_INPAINT_LOSS_WEIGHT:
+    value: 1.0
+  IMAGE_RECONSTRUCTION_LOSS_WEIGHT:
+    value: 0.0
+
+  HLREG_W_L1:
+    value: 1.0
+  HLREG_USE_CHARB:
+    value: True
+  HLREG_W_DICE:
+    value: 0.2
+  HLREG_W_SSIM:
+    value: 0.0
+  HLREG_W_GRAD:
+    value: 0.0
+  HLREG_W_TV:
+    value: 0.0
+  HLREG_BALANCE_MODE:
+    value: "auto"
+  HLREG_POS_WEIGHT:
+    value: 1.0
+  HLREG_FOCAL_GAMMA:
+    value: 2.0
+
+  WEIGHT_SEAM:
+    value: 0.5  # GOOD runs used 0.5 (kills blur/halos at the inpaint boundary). cerulean=0.
+  RING_DILATE_KERNEL:
+    value: 17
+  SEAM_USE_CHARB:
+    value: True
+  SEAM_WEIGHT_GRAD:
+    value: 0.0  # GOOD runs used 0 (the gradient-seam term was an unproven unique-sponge experiment).
+  TOKEN_FEAT_ALPHA:
+    value: 0.5
+
+  ### DIFFUSE HIGHLIGHT PENALTY
+  WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
+    value: 1.0  # snowy (best removal) used 1.0. The most direct "no bright pixels left in the diffuse output" signal.
+  DIFFUSE_HL_THRESHOLD:
+    value: 0.85
+  DIFFUSE_HL_USE_CHARB:
+    value: True
+  DIFFUSE_HL_PENALTY_MODE:
+    value: "brightness"
+  DIFFUSE_HL_TARGET_BRIGHTNESS:
+    value: null
+  DIFFUSE_HL_USE_LUMINANCE:
+    value: False
+
+  ### LOGGING, RESULTS AND WANDB
+  LOG_INTERVAL:
+    value: 1
+  WANDB_LOG_INTERVAL:
+    value: 1
+  IMAGE_LOG_INTERVAL:
+    value: 5
+  NO_WANDB:
+    value: False
+  MODEL_WATCHER_FREQ_WANDB:
+    value: 50
+  WANDB_ENTITY:
+    value: "unreflect-anything"
+  WANDB_PROJECT:
+    value: "UnReflectAnything"
+  NOTES:
+    value: "optimal: GOOD-run regime (broad highlights, supervised mask head, strong HL penalty, stable decoder)"
