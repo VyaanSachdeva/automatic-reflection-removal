@@ -120,9 +120,14 @@ DATASET_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "HIGHLIGHT_DIR_NAME": "highlight",
         "LOAD_HIGHLIGHT": True,
         "RGB_EXT": ".png",
-        
+
     },
-    
+    "SSHR": {
+        "ROOT_DIR": "$DATASET_DIR/SSHR/",
+        "RGB_DIR_NAME": "rgb",
+        "DIFFUSE_DIR_NAME": "diffuse",
+        "RGB_EXT": ".jpg",
+    },
 }
 
 # Wrapper classes (optional; only used when CLASS is set in config). They read from DATASET_DEFAULTS.
@@ -149,3 +154,4 @@ SCANNET_Dataset = _make_wrapper("SCANNET")
 OPENIMAGESV7_Dataset = _make_wrapper("OPENIMAGESV7")
 ENDOSYNTH_Dataset = _make_wrapper("ENDOSYNTH")
 SHIQ_Dataset = _make_wrapper("SHIQ")
+SSHR_Dataset = _make_wrapper("SSHR")
