@@ -718,7 +718,12 @@ class Engine:
                 self.training_sampler.set_epoch(self.step["epoch"])
             dataloader = self.training_dl if phase == "Training" else self.validation_dl
         else:
-            cpu_affinity = os.sched_getaffinity(os.getpid())
+            # os.sched_getaffinity is POSIX-only; Windows has no equivalent concept
+            cpu_affinity = (
+                os.sched_getaffinity(os.getpid())
+                if hasattr(os, "sched_getaffinity")
+                else range(os.cpu_count() or 1)
+            )
             if self.config.get("NUM_WORKERS", "auto") == "auto":
                 NUM_WORKERS = int(math.floor(0.9 * len(list(cpu_affinity))))
             else:

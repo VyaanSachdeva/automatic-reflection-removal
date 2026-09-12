@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 ####
 ### NAIVE LINEAR TOKEN INPAINTER
@@ -184,8 +185,37 @@ class _SelfAttn(nn.Module):
         )
 
     def forward(self, x):
-        # full self-attention over all tokens; no key padding/masking
-        out, _ = self.attn(x, x, x, need_weights=False)
+        # full self-attention over all tokens; no key padding/masking.
+        #
+        # Deliberately NOT calling self.attn(x, x, x, ...) here: with the long
+        # token sequences this model runs on (e.g. 56x56=3136 DINOv3 patch
+        # tokens), nn.MultiheadAttention.forward crashes with a native access
+        # violation inside torch's own multi_head_attention_forward on CPU
+        # (reproduced on torch==2.9.1+cpu; independent of need_weights,
+        # torch.backends.mha fastpath, and thread count). Reimplementing the
+        # identical computation via scaled_dot_product_attention avoids that
+        # code path entirely while reusing self.attn's own parameters, so any
+        # existing checkpoint's state_dict (attn.in_proj_weight, attn.out_proj...)
+        # still loads unchanged.
+        B, N, C = x.shape
+        H = self.attn.num_heads
+        head_dim = C // H
+        qkv = F.linear(x, self.attn.in_proj_weight, self.attn.in_proj_bias)
+        q, k, v = qkv.chunk(3, dim=-1)
+        q = q.view(B, N, H, head_dim).transpose(1, 2)
+        k = k.view(B, N, H, head_dim).transpose(1, 2)
+        v = v.view(B, N, H, head_dim).transpose(1, 2)
+        dropout_p = self.attn.dropout if self.training else 0.0
+        if q.device.type == "cpu":
+            # PyTorch's fused/flash CPU SDPA kernel also segfaults for this
+            # sequence length (see note above); the unfused math backend is
+            # slower but correct. CUDA is unaffected, so only force it here.
+            with sdpa_kernel(SDPBackend.MATH):
+                out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        else:
+            out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        out = out.transpose(1, 2).reshape(B, N, C)
+        out = self.attn.out_proj(out)
         return out
 
 

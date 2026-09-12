@@ -649,7 +649,9 @@ class HighlightRender(nn.Module):
             normals: [B,3,H,W] surface normals
         """
         with torch.no_grad():
-            mogeout = self.geometry_model.infer(image)  # image: [B,3,H,W]
+            # MoGe's use_fp16=True default autocasts to float16 even on CPU, where
+            # fp16 conv kernels error out with dtype mismatches; only worth it on CUDA.
+            mogeout = self.geometry_model.infer(image, use_fp16=image.device.type == "cuda")
 
         # Extract depth [B,H,W] and normals [B,H,W,3]
         depth = mogeout["depth"]  # [B,H,W]

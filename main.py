@@ -206,6 +206,13 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
     else:
         DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    if DEVICE.type == "cpu":
+        # nn.MultiheadAttention's CPU fast path (used whenever need_weights=False,
+        # as in token_inpainters.py's _SelfAttn) segfaults with an access violation
+        # inside torch's native multi_head_attention_forward on this torch build --
+        # the slow/math path is unaffected and only matters for CPU debug runs.
+        torch.backends.mha.set_fastpath_enabled(False)
+
     # Initial logging: logger is DDP-aware and emits to console only on rank 0
     try:
         logger.info(titlescreen(), context="INFO")
