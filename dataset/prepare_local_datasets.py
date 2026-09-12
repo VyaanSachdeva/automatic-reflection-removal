@@ -7,10 +7,8 @@ expects under a single $DATASET_DIR root:
     $DATASET_DIR/SHIQ/{train,test}/{diffuse,highlight}/<id>.png
     $DATASET_DIR/SSHR/{train,test}_<scene>/{rgb,diffuse}/<idx>.jpg
 
-No file content is copied: PSD is exposed via a directory junction (its raw
-layout already matches, it just needs "specular"/"diffuse" aliases), and
-SHIQ/SSHR are relinked file-by-file with os.link (hardlinks, same volume,
-zero extra disk usage).
+No file content is copied: every file is relinked with os.link (hardlinks,
+same volume, zero extra disk usage) rather than copied.
 
 SHIQ mapping note (not published by the upstream repo -- Test/Evaluate wiki
 pages are marked WIP as of writing): the raw SHIQ quadruple is
@@ -28,8 +26,6 @@ corrected to match input exposure) rather than _d.
 """
 import argparse
 import os
-import subprocess
-import sys
 
 
 def _hardlink(src: str, dst: str) -> None:
@@ -39,33 +35,55 @@ def _hardlink(src: str, dst: str) -> None:
     os.link(src, dst)
 
 
-def _junction(link: str, target: str) -> None:
-    if os.path.exists(link):
-        return
-    os.makedirs(os.path.dirname(link), exist_ok=True)
-    link = os.path.normpath(link)
-    target = os.path.normpath(target)
-    result = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", link, target],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"mklink failed for {link} -> {target}: {result.stdout} {result.stderr}")
+def _normalize_stem(stem: str) -> str:
+    """Strip punctuation/spaces and lowercase, so e.g. "Test (1)" and "Test_ (1)"
+    (an inconsistency in the raw PSD_Test release -- specular/diffuse filenames
+    there don't match verbatim, unlike PSD_Train/PSD_Val) compare equal. Digits
+    are left untouched so "Val_0001" and "Val_01" still stay distinct (both
+    genuinely occur in PSD_Val -- a naive int(digits) key would collide them)."""
+    import re
+
+    return re.sub(r"[^0-9a-zA-Z]", "", stem).lower()
 
 
 def prepare_psd(raw_root: str, dataset_dir: str) -> None:
-    """raw_root: .../extracted/PSD_raw (contains PSD_Dataset/...)"""
+    """raw_root: .../extracted/PSD_raw (contains PSD_Dataset/...)
+
+    Reads and re-links per file rather than aliasing whole folders: the raw
+    release mixes .png/.JPG/.jpg extensions (wrappers.py's PSD entry hardcodes
+    RGB_EXT=".png", so JPG-only files -- including the *entire* PSD_Test split
+    -- would otherwise be silently invisible to the loader), and PSD_Test's
+    specular/diffuse filenames don't match verbatim (see _normalize_stem).
+    Output filenames are forced to a .png suffix (content is untouched, PIL
+    sniffs the real codec) purely so RGB_EXT=".png" sees every file.
+    """
     psd_raw = os.path.join(raw_root, "PSD_Dataset")
     psd_out = os.path.join(dataset_dir, "PSD_Dataset")
-    os.makedirs(psd_out, exist_ok=True)
     splits = {"PSD_Train": "PSD_Train", "PSD_val": "PSD_Val", "PSD_Test": "PSD_Test"}
     for raw_split, out_split in splits.items():
         raw_split_dir = os.path.join(psd_raw, raw_split)
-        out_split_dir = os.path.join(psd_out, out_split)
-        os.makedirs(out_split_dir, exist_ok=True)
-        _junction(os.path.join(out_split_dir, "specular"), os.path.join(raw_split_dir, f"{raw_split}_specular"))
-        _junction(os.path.join(out_split_dir, "diffuse"), os.path.join(raw_split_dir, f"{raw_split}_diffuse"))
+        specular_dir = os.path.join(raw_split_dir, f"{raw_split}_specular")
+        diffuse_dir = os.path.join(raw_split_dir, f"{raw_split}_diffuse")
+        if not os.path.isdir(specular_dir):
+            continue
+
+        diffuse_by_key = {}
+        for fname in os.listdir(diffuse_dir):
+            stem, _ = os.path.splitext(fname)
+            diffuse_by_key[_normalize_stem(stem)] = fname
+
+        linked = 0
+        for fname in os.listdir(specular_dir):
+            stem, _ = os.path.splitext(fname)
+            key = _normalize_stem(stem)
+            diffuse_fname = diffuse_by_key.get(key)
+            if diffuse_fname is None:
+                continue
+            out_name = f"{stem}.png"
+            _hardlink(os.path.join(specular_dir, fname), os.path.join(psd_out, out_split, "specular", out_name))
+            _hardlink(os.path.join(diffuse_dir, diffuse_fname), os.path.join(psd_out, out_split, "diffuse", out_name))
+            linked += 1
+        print(f"[PSD] {out_split}: {linked} pairs linked")
     print(f"[PSD] ready at {psd_out}")
 
 
