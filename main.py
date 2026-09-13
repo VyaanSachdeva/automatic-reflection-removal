@@ -14,13 +14,17 @@ from rich.traceback import install
 from engine import Engine
 from logger import get_logger
 from utilities.system_ops import titlescreen
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Type
 from utilities.config import DISTRIBUTE_DDP, DISTRIBUTE_DP, DISTRIBUTE_SINGLEGPU
 
 logger = get_logger(__name__).set_context("IMPORT")
 
 
-def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -> None:
+def run_pipeline(
+    mode: str = "train",
+    config: Optional[Dict[str, Any]] = None,
+    engine_class: Type[Engine] = Engine,
+) -> None:
     """
     Common pipeline for train and test modes.
 
@@ -279,7 +283,7 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
                 # Initialize engine in resume mode so that:
                 # - Existing run directories are reused (no new RUN_DIR is created)
                 # - WandB is resumed directly using the stored run ID (no new run)
-                engine = Engine(
+                engine = engine_class(
                     model=model,
                     dataset=dataset,
                     config=config,
@@ -328,7 +332,7 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
                 model = wrap_model_for_parallelization(model, config)
 
                 # Initialize engine
-                engine = Engine(
+                engine = engine_class(
                     model=model,
                     dataset=dataset,
                     config=config,
@@ -373,7 +377,7 @@ def run_pipeline(mode: str = "train", config: Optional[Dict[str, Any]] = None) -
             dataset = create_datasets_from_config(config)
 
             # Initialize engine in resume mode, resuming the existing WandB run
-            engine = Engine(
+            engine = engine_class(
                 model=model,
                 dataset=dataset,
                 config=config,

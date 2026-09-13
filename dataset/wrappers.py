@@ -128,6 +128,15 @@ DATASET_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "DIFFUSE_DIR_NAME": "diffuse",
         "RGB_EXT": ".jpg",
     },
+    # Clean (rain-free) driving footage used as the base pool for the
+    # raindrop/streak/glare project's on-the-fly VRGS synthesis (see
+    # raindrop_render.py) -- plays the same role here that SUNRGBD/ScanNet/
+    # OpenImagesV7 play for VHS: no ground truth needed, just clean RGB.
+    "KITTI_CLEAN": {
+        "ROOT_DIR": "$DATASET_DIR/KITTI_Clean/",
+        "RGB_DIR_NAME": "rgb",
+        "RGB_EXT": ".png",
+    },
 }
 
 # Wrapper classes (optional; only used when CLASS is set in config). They read from DATASET_DEFAULTS.
@@ -155,3 +164,4 @@ OPENIMAGESV7_Dataset = _make_wrapper("OPENIMAGESV7")
 ENDOSYNTH_Dataset = _make_wrapper("ENDOSYNTH")
 SHIQ_Dataset = _make_wrapper("SHIQ")
 SSHR_Dataset = _make_wrapper("SSHR")
+KITTI_CLEAN_Dataset = _make_wrapper("KITTI_CLEAN")

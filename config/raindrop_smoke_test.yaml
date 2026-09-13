@@ -1,0 +1,219 @@
+### RAINDROP SMOKE TEST: verifies RaindropEngine + RaindropRender run
+### end-to-end on CPU with a tiny slice of KITTI. Same shrink-to-224
+### rationale as config/smoke_test.yaml (896x896 segfaults on this
+### machine's RAM budget). Not meant to converge or produce a useful model.
+### Run with train_raindrop.py, NOT train.py (that uses the stock Engine).
+
+parameters:
+
+  MODEL:
+    value:
+      MODEL_CLASS: "UnReflect_Model_TokenInpainter"
+      MODEL_MODULE: "models"
+      RGB_ENCODER:
+        ENCODER: "AlbeRota/DINOv3_mirror"
+        IMAGE_SIZE: 224
+        RETURN_SELECTED_LAYERS: [3, 6, 9, 12]
+        RGB_ENCODER_LR: 0.0
+      DECODERS:
+        diffuse:
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          USE_BN: False
+          DROPOUT: 0.1
+          OUTPUT_IMAGE_SIZE: [224,224]
+          OUTPUT_CHANNELS: 3
+          DECODER_LR: 0.0
+          NUM_FUSION_BLOCKS_TRAINABLE: 1
+          TRAIN_RGB_HEAD: True
+        highlight:
+          # Repurposed as the raindrop/streak/glare degradation-mask
+          # detector -- same architecture, retrained on RaindropRender's
+          # masks instead of specular highlight masks (see plan Phase C).
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [96,192,384,768]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          USE_BN: False
+          DROPOUT: 0.1
+          OUTPUT_IMAGE_SIZE: [224,224]
+          OUTPUT_CHANNELS: 1
+          DECODER_LR: 5.0e-4
+          NUM_FUSION_BLOCKS_TRAINABLE: null
+      TOKEN_INPAINTER:
+        TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"
+        TOKEN_INPAINTER_MODULE: "token_inpainters"
+        TOKEN_INPAINTER_LR: 1.0e-4
+        DEPTH: 6
+        HEADS: 16
+        DROP: 0.05
+        USE_POSITIONAL_ENCODING: True
+        USE_FINAL_NORM: True
+        USE_LOCAL_PRIOR: True
+        LOCAL_PRIOR_WEIGHT: 0.5
+        LOCAL_PRIOR_KERNEL: 5
+        SEED_NOISE_STD: 0.02
+  INPAINT_MASK_DILATION:
+    value: 3
+  INPAINT_MASK_THRESHOLD:
+    value: 0.2
+  USE_TORCH_COMPILE:
+    value: False
+  DISTRIBUTE:
+    value: "singlegpu"
+
+  ### DATA -- clean KITTI pool only; RaindropRender synthesizes the
+  ### degradation on the fly (see raindrop_render.py), same role
+  ### HighlightRender/VHS plays for the stock pipeline.
+  DATASETS:
+    value:
+      KITTI_CLEAN:
+        TRAIN_SCENES: "all"
+        VAL_SCENES: "all"
+        TARGET_SIZE: [224,224]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 1
+        LOAD_RGB_ONLY: True
+        FEW_IMAGES: True
+  FEW_IMAGES_ALL_DATASETS:
+    value: True
+
+  BATCH_SIZE:
+    value: 1
+  NUM_WORKERS:
+    value: 0
+  SHUFFLE:
+    value: True
+  PIN_MEMORY:
+    value: False
+  PREFETCH_FACTOR:
+    value: null
+
+  ### RAINDROP SYNTHESIS (RaindropRender params -- see raindrop_render.py)
+  RAIN_INTENSITY:
+    value: [0.3, 1.0]  # uniform-sampled per batch when a training batch
+  CAPTURE_CONTEXT:
+    value: "dashcam"
+  CLAMP_RECONSTRUCTION:
+    value: True
+
+  ### OPTIMIZATION -- trimmed to run fast
+  LEARNING_RATE:
+    value: 1.0e-3
+  WEIGHT_DECAY:
+    value: 0.0
+  EPOCHS:
+    value: 1
+  GRADIENT_ACCUMULATION_STEPS:
+    value: 1
+  WARMUP:
+    value: 0
+  GRADIENT_CLIPPING_MAX_NORM:
+    value: 8
+  LR_SCHEDULER:
+    value:
+      ONPLATEAU:
+        PATIENCE: 5
+        FACTOR: 0.1
+      STEPWISE:
+        N_STEPS: 4
+        GAMMA: 0.5
+
+  SWITCH_OPTIMIZER_EPOCH:
+    value: null
+  OPTIMIZER_BOOTSTRAP_NAME:
+    value: "AdamW"
+  OPTIMIZER_REFINING_NAME:
+    value: "AdamW"
+  EARLY_STOPPING_PATIENCE:
+    value: 10
+  SAVE_INTERVAL:
+    value: 1000000
+
+  DATASET_HIGHLIGHT_SUPERVISION_THRESHOLD:
+    value: 0.1
+
+  ### LOSS WEIGHTS (unchanged from train.yaml/smoke_test.yaml)
+  SPECULAR_LOSS_WEIGHT:
+    value: 0.0
+  DIFFUSE_LOSS_WEIGHT:
+    value: 0.0
+  HIGHLIGHT_LOSS_WEIGHT:
+    value: 1.0
+  TOKEN_INPAINT_LOSS_WEIGHT:
+    value: 1.0
+  IMAGE_RECONSTRUCTION_LOSS_WEIGHT:
+    value: 0.0
+  SATURATION_RING_LOSS_WEIGHT:
+    value: 0.0
+  WEIGHT_CONTEXT_IDENTITY:
+    value: 0.0
+  WEIGHT_TV_IN_HOLE:
+    value: 0.0
+  RING_KERNEL_SIZE:
+    value: 11
+  RING_VAR_WEIGHT:
+    value: 0.5
+  RING_TEXTURE_WEIGHT:
+    value: 1.0
+  HLREG_W_L1:
+    value: 1.0
+  HLREG_USE_CHARB:
+    value: True
+  HLREG_W_DICE:
+    value: 0.2
+  HLREG_W_SSIM:
+    value: 0.0
+  HLREG_W_GRAD:
+    value: 0.0
+  HLREG_W_TV:
+    value: 0.0
+  HLREG_BALANCE_MODE:
+    value: "auto"
+  HLREG_POS_WEIGHT:
+    value: 1.0
+  HLREG_FOCAL_GAMMA:
+    value: 2.0
+  RING_DILATE_KERNEL:
+    value: 17
+  WEIGHT_SEAM:
+    value: 0.5
+  SEAM_USE_CHARB:
+    value: True
+  SEAM_WEIGHT_GRAD:
+    value: 0.0
+  TOKEN_FEAT_ALPHA:
+    value: 0.5
+
+  WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
+    value: 0.1
+  DIFFUSE_HL_THRESHOLD:
+    value: 0.85
+  DIFFUSE_HL_USE_CHARB:
+    value: True
+  DIFFUSE_HL_PENALTY_MODE:
+    value: "brightness"
+  DIFFUSE_HL_TARGET_BRIGHTNESS:
+    value: null
+  DIFFUSE_HL_USE_LUMINANCE:
+    value: False
+
+  ### LOGGING -- wandb disabled for the smoke test
+  LOG_INTERVAL:
+    value: 1
+  WANDB_LOG_INTERVAL:
+    value: 1
+  IMAGE_LOG_INTERVAL:
+    value: 5
+  NO_WANDB:
+    value: True
+  MODEL_WATCHER_FREQ_WANDB:
+    value: 50
+  WANDB_ENTITY:
+    value: "unreflect-anything"
+  WANDB_PROJECT:
+    value: "UnReflectAnything"
+  NOTES:
+    value: "Raindrop CPU smoke test"
