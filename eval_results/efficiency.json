@@ -1,0 +1,109 @@
+{
+  "machine": {
+    "cpu": "Intel64 Family 6 Model 126 Stepping 5, GenuineIntel",
+    "threads": 4,
+    "ram_gb": 15.7,
+    "torch": "2.9.1+cpu",
+    "device": "cpu"
+  },
+  "input": "720x480 photo; UnReflectAnything resizes it to its 896x896 working size",
+  "weights_rss_mb": {
+    "unreflectanything_and_deraindrop": 3822
+  },
+  "params_m": {
+    "dinov3_encoder (frozen)": 303.13,
+    "highlight_detector_decoder": 13.71,
+    "token_inpainter": 76.63,
+    "image_decoder": 104.54,
+    "unreflectanything_total": 498.0,
+    "deraindrop_generator": 6.24,
+    "deraindrop_attention_branch": 0.17
+  },
+  "stages": {
+    "dinov3_encode": {
+      "gflops": 1902.0,
+      "latency_s": 32.49,
+      "throughput_img_per_s": 0.031,
+      "peak_extra_mb": 187
+    },
+    "highlight_detector": {
+      "gflops": 462.0,
+      "latency_s": 5.09,
+      "throughput_img_per_s": 0.196,
+      "peak_extra_mb": 23
+    },
+    "raindrop_detector (DeRaindrop attention)": {
+      "gflops": 462.6,
+      "latency_s": 5.26,
+      "throughput_img_per_s": 0.19,
+      "peak_extra_mb": 6
+    },
+    "released_inpainter (4 layers)": {
+      "gflops": 1289.7,
+      "latency_s": 29.4,
+      "throughput_img_per_s": 0.034,
+      "peak_extra_mb": 61
+    },
+    "neighbour_fill (4 layers)": {
+      "gflops": 1.2,
+      "latency_s": 3.42,
+      "throughput_img_per_s": 0.293,
+      "peak_extra_mb": 38
+    },
+    "image_decoder": {
+      "gflops": 897.8,
+      "latency_s": 11.75,
+      "throughput_img_per_s": 0.085,
+      "peak_extra_mb": 58
+    },
+    "deraindrop_full": {
+      "gflops": 806.0,
+      "latency_s": 10.82,
+      "throughput_img_per_s": 0.092,
+      "peak_extra_mb": 6
+    }
+  },
+  "pipelines": {
+    "stock_unreflectanything": {
+      "gflops": 4551.5,
+      "latency_s": 78.73,
+      "throughput_img_per_s": 0.013,
+      "peak_extra_mb": 187,
+      "stages": [
+        "dinov3_encode",
+        "highlight_detector",
+        "released_inpainter (4 layers)",
+        "image_decoder"
+      ]
+    },
+    "ours_raindrop_detector_neighbour_fill": {
+      "gflops": 3263.6,
+      "latency_s": 52.92,
+      "throughput_img_per_s": 0.019,
+      "peak_extra_mb": 187,
+      "stages": [
+        "raindrop_detector (DeRaindrop attention)",
+        "dinov3_encode",
+        "neighbour_fill (4 layers)",
+        "image_decoder"
+      ]
+    },
+    "deraindrop": {
+      "gflops": 806.0,
+      "latency_s": 10.82,
+      "throughput_img_per_s": 0.092,
+      "peak_extra_mb": 6,
+      "stages": [
+        "deraindrop_full"
+      ]
+    }
+  },
+  "vrgs_render": {
+    "gflops": 0.0,
+    "latency_s": 6.58,
+    "throughput_img_per_s": 0.152,
+    "peak_extra_mb": 21,
+    "frame": "960x290"
+  },
+  "process_peak_rss_mb": 5547
+}

@@ -9,10 +9,11 @@ degradation to a clean driving frame.
 
 "Remove rain" compares, on real DeRaindrop rain/clean pairs scored against
 ground truth: the stock pretrained UnReflectAnything model, the same model
-driven by DeRaindrop's raindrop detector (every rainy patch repaired), and
-DeRaindrop itself (derainnet.py), the open-source raindrop-specific baseline.
-Outputs are precomputed (UnReflectAnything takes ~1-2 min/image on CPU) into
-DEMO_ASSETS/{stock_output,drnmask_output,gtmask_output,deraindrop_output};
+driven by DeRaindrop's raindrop detector (every rainy patch repaired) with
+either the released inpainter or neighbour fill (model_stages.neighbour_fill),
+and DeRaindrop itself (derainnet.py), the open-source raindrop-specific
+baseline. Outputs are precomputed (UnReflectAnything takes ~1-2 min/image on
+CPU) into DEMO_ASSETS/{stock,drnmask,drnfill,gtfill,deraindrop}_output;
 DeRaindrop is fast enough (~10 s) to also run live. Our own raindrop-trained
 model isn't shown yet -- it needs the GPU training run.
 
@@ -95,15 +96,17 @@ def _load_examples() -> dict:
 
 # Precomputed outputs beyond the stock model's, keyed as in each example dict.
 OPTIONAL_OUTPUTS = {
-    "drnmask": "drnmask_output",  # UnReflectAnything + DeRaindrop's raindrop detector
-    "fix": "gtmask_output",  # UnReflectAnything + the ground-truth droplet mask
+    "drnmask": "drnmask_output",  # DeRaindrop's raindrop detector + the released inpainter
+    "drnfill": "drnfill_output",  # DeRaindrop's raindrop detector + neighbour fill
+    "fix": "gtfill_output",  # the ground-truth droplet mask + neighbour fill
     "drn": "deraindrop_output",  # DeRaindrop itself
 }
 ROW_LABELS = {
     "rainy": "Rainy input (left alone)",
     "out": "UnReflectAnything, stock (its highlight detector)",
-    "drnmask": "UnReflectAnything, raindrop detector: every rainy patch repaired",
-    "fix": "UnReflectAnything, correct droplet mask (upper bound on detection)",
+    "drnmask": "UnReflectAnything, raindrop detector + released inpainter",
+    "drnfill": "UnReflectAnything, raindrop detector + neighbour fill",
+    "fix": "UnReflectAnything, correct droplet mask + neighbour fill (upper bound on detection)",
     "drn": "DeRaindrop (CVPR 2018, open-source raindrop model)",
 }
 
@@ -158,9 +161,14 @@ def _finetune_md() -> str:
 SUMMARY_NOTES = """
 - **Stock UnReflectAnything** looks for bright highlights, not droplets: it marks about 4% of patches, mostly in the
   wrong places, and re-renders the rest of the image softer.
-- **Raindrop detector, every rainy patch repaired:** DeRaindrop's raindrop map now marks every rainy patch, but droplets
-  touch so many of the 16×16 patches that UnReflectAnything's inpainter has little clean context left and fills them
-  with dark blotches. Detection was only half the problem; the inpainter has never seen this degradation.
+- **Raindrop detector + released inpainter:** DeRaindrop's raindrop map marks every rainy patch, but each droplet comes
+  back as a dark blob. The released inpainter was trained with an inverted mask: at each hole it is given that hole's
+  own features and learned to correct a highlight in place (mostly by darkening it), so it keeps the droplet instead
+  of replacing it.
+- **Raindrop detector + neighbour fill:** discards the droplet's features and rebuilds each marked patch from the
+  clean patches around it, so the droplets are actually removed. The fill is smooth (it can't invent fine detail), and
+  where droplets are dense the repaired areas turn soft and patchy, which still costs it against the untouched photo
+  on these metrics. A trained inpainter is what closes that gap.
 - **DeRaindrop**, a model trained specifically on raindrops, is the strongest baseline here. But these photos come
   from its own test set (same glass pane and camera it was trained with), so this is its best case.
 """
@@ -204,7 +212,7 @@ def show_example(name: str):
         if e.get(key + "_scores") is not None:
             p, s = e[key + "_scores"]
             md += f"| {label} | {p:.2f} | {s:.3f} |\n"
-    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["fix"], md
+    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], md
 
 
 DRN_VERSIONS = {"Released": derainnet.WEIGHTS, "Fine-tuned on VRGS": derainnet.FINETUNED}
@@ -237,12 +245,12 @@ def run_stock_live(img: Image.Image):
 
 
 MODES = [
-    "Raindrop detector: repair every rainy patch, keep original pixels elsewhere",
+    "Raindrop detector + neighbour fill (removes the droplets)",
+    "Raindrop detector + released inpainter (turns droplets into dark blobs)",
     "Stock model as-is (its highlight detector)",
-    "Stock detector, keep original pixels outside repairs",
-    "Correct droplet mask, keep original pixels (DeRaindrop examples only)",
+    "Correct droplet mask + neighbour fill (DeRaindrop examples only)",
 ]
-RAINDROP_MODE, STOCK_MODE, GT_MODE = MODES[0], MODES[1], MODES[3]
+RAINDROP_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
 
 
 def _find_clean(img: Image.Image):
@@ -267,7 +275,8 @@ def watch_model(img: Image.Image, mode: str):
             raise gr.Error("The correct droplet mask comes from the clean photo, so it only works on the DeRaindrop examples below.")
         mask_override = model_stages.ground_truth_mask(img, clean)
     composite = mode != STOCK_MODE
-    detector = "deraindrop" if mode == RAINDROP_MODE else "highlight"
+    detector = "deraindrop" if mode in (RAINDROP_MODE, RAINDROP_LEARNED_MODE) else "highlight"
+    fill = "neighbours" if mode in (RAINDROP_MODE, GT_MODE) else "learned"
     n = len(model_stages.STAGES)
     images, notes, times = [None] * n, [""] * n, [None] * n
     prefix = "" if model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
@@ -297,7 +306,7 @@ def watch_model(img: Image.Image, mode: str):
 
     yield [table(0)] + images
     for i, secs, im, note in model_stages.run_stages(img, mask_override=mask_override, composite=composite,
-                                                      detector=detector):
+                                                      detector=detector, fill=fill):
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
             yield [table(0)] + images
@@ -369,9 +378,10 @@ with gr.Blocks() as demo:
                 watch_in = gr.Image(type="pil", label="Rainy image")
                 watch_mode = gr.Radio(
                     MODES, value=RAINDROP_MODE, label="Which regions to repair",
-                    info="The stock detector looks for bright highlights, not droplets, and marks only a few patches. "
-                         "The raindrop detector (borrowed from DeRaindrop) marks every rainy patch. The correct mask "
-                         "is the upper bound: what if detection were perfect?",
+                    info="The raindrop detector (borrowed from DeRaindrop) marks every rainy patch; the stock one looks "
+                         "for bright highlights instead. The released inpainter was trained to correct highlights in "
+                         "place, so it keeps each droplet and darkens it; neighbour fill rebuilds those patches from "
+                         "the clean ones around them. The correct mask shows what perfect detection would give.",
                 )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
@@ -407,9 +417,9 @@ with gr.Blocks() as demo:
         with gr.Row():
             stock_img = gr.Image(type="pil", label=ROW_LABELS["out"])
             drnmask_img = gr.Image(type="pil", label=ROW_LABELS["drnmask"])
-            fix_img = gr.Image(type="pil", label=ROW_LABELS["fix"])
+            drnfill_img = gr.Image(type="pil", label=ROW_LABELS["drnfill"])
         scores_md = gr.Markdown()
-        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, fix_img, scores_md]
+        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, scores_md]
         pick.change(show_example, pick, example_outputs)
         if names:
             demo.load(show_example, pick, example_outputs)

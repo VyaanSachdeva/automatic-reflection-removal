@@ -86,8 +86,42 @@ def ground_truth_mask(rainy: Image.Image, clean: Image.Image, thresh: float = 0.
     return F.avg_pool2d(d, 5, 1, 2) > thresh
 
 
+def neighbour_fill(T: torch.Tensor, hole: torch.Tensor, grid: int, smooth_passes: int = 10) -> torch.Tensor:
+    """Fills hole tokens from the visible tokens around them, peeling inward one
+    ring at a time (each new token = mean of its already-known 3×3 neighbours),
+    then smooths inside the holes so fills aren't blocky. T: [B,N,C],
+    hole: [B,N] bool (True = fill). No learned weights.
+
+    Used instead of the released TokenInpainter for raindrops: that checkpoint
+    was trained with an inverted mask (see the comment in the package's
+    UnReflect_Model_TokenInpainter.forward), so at each hole it receives the
+    hole's own token and learned to correct a highlight in place. On a droplet
+    it keeps the droplet and just darkens it -- the dark blobs. Passing the
+    mask the documented way round is worse still (blocky grey fills), since
+    the weights never learned it.
+    """
+    B, N, C = T.shape
+    x = T.transpose(1, 2).reshape(B, C, grid, grid).clone()
+    hole_g = hole.reshape(B, 1, grid, grid)
+    known = (~hole_g).float()
+    if known.sum() == 0:
+        return T
+    k = torch.ones(1, 1, 3, 3, dtype=T.dtype, device=T.device)
+    while known.min() < 1:
+        num = F.conv2d(x * known, k.expand(C, 1, 3, 3), padding=1, groups=C)
+        den = F.conv2d(known, k, padding=1)
+        new = (den > 0) & (known == 0)
+        x = torch.where(new, num / den.clamp_min(1e-6), x)
+        known = torch.maximum(known, new.float())
+    for _ in range(smooth_passes):
+        sm = F.avg_pool2d(F.pad(x, (1, 1, 1, 1), mode="replicate"), 3, 1)
+        x = torch.where(hole_g, sm, x)
+    return x.reshape(B, C, N).transpose(1, 2)
+
+
 def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Tensor | None = None,
-               composite: bool = False, detector: str = "highlight", rain_threshold: float = 0.2):
+               composite: bool = False, detector: str = "highlight", rain_threshold: float = 0.2,
+               fill: str = "learned"):
     """Generator. Yields (stage_index, seconds, image, note) as each stage
     finishes; stage_index -1 is model loading.
 
@@ -96,6 +130,9 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
     detector: "highlight" is the model's own (specular) detector; "deraindrop"
     swaps in DeRaindrop's raindrop attention map (derainnet.py), thresholded at
     rain_threshold, so every rainy patch is marked for repair.
+    fill: "learned" is the released TokenInpainter (matches `ura inference`);
+    "neighbours" rebuilds each hole from the clean tokens around it
+    (neighbour_fill), which removes droplets instead of darkening them.
     composite: keep the original pixels everywhere outside the repair mask
     (blended at the input's full resolution), instead of the decoder's
     re-rendering of the whole image, which softens detail everywhere.
@@ -163,8 +200,11 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         is_soft = patch_mask.dtype.is_floating_point
         completed = []
         for T in tokens:
-            visibility = 1.0 - patch_mask if is_soft else torch.logical_not(patch_mask)
-            T_inp = inner.token_inpaint(T, visibility)
+            if fill == "neighbours":
+                T_inp = neighbour_fill(T, patch_mask > 0.5 if is_soft else patch_mask, grid)
+            else:
+                visibility = 1.0 - patch_mask if is_soft else torch.logical_not(patch_mask)
+                T_inp = inner.token_inpaint(T, visibility)
             if is_soft:
                 pm = patch_mask.unsqueeze(-1)
                 T_comp = pm * T_inp + (1.0 - pm) * T
@@ -174,8 +214,10 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         change = (completed[-1] - tokens[-1]).norm(dim=-1).reshape(1, 1, grid, grid)
         change = change / change.max().clamp_min(1e-8)
         change_img = F.interpolate(change, size=x.shape[-2:], mode="nearest")
+        how = ("rebuilt from the clean patches around them" if fill == "neighbours"
+               else "by the released inpainter")
         yield 3, time.perf_counter() - t, _overlay(x, change_img, color=(0.1, 0.8, 1.0), alpha=0.7), (
-            "Brighter cyan = patches whose features were rewritten more"
+            f"Marked patches {how}. Brighter cyan = features rewritten more"
         )
 
         t = time.perf_counter()
