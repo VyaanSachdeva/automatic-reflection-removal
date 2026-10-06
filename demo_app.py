@@ -4,7 +4,10 @@ Review-2 demo for the raindrop/streak/glare removal project.
 Tab 1 runs VRGS (raindrop_render.py) live: add synthetic water-on-glass
 degradation to a clean driving frame.
 
-Tab 2 shows the stock pretrained UnReflectAnything model on real DeRaindrop
+"Watch the model" runs the stock pretrained model one stage at a time
+(model_stages.py) and shows each stage's output as it finishes.
+
+"Remove rain" shows the stock pretrained UnReflectAnything model on real DeRaindrop
 rain/clean pairs, scored against ground truth. Outputs are precomputed
 (CPU inference is ~1-2 min/image) by running `ura inference` over
 DEMO_ASSETS/rainy into DEMO_ASSETS/stock_output; live upload is available
@@ -20,6 +23,7 @@ import random
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import gradio as gr
@@ -30,6 +34,7 @@ from torchvision.transforms import functional as TF
 REPO = Path(__file__).parent
 sys.path.insert(0, str(REPO))
 import metrics  # noqa: E402
+import model_stages  # noqa: E402
 from raindrop_render import RaindropRender  # noqa: E402
 
 ASSETS = Path(os.environ.get("DEMO_ASSETS", r"C:\Users\sachd\Downloads\raindrop_project\demo_assets"))
@@ -138,6 +143,39 @@ def run_stock_live(img: Image.Image):
         return Image.open(out_file).copy()
 
 
+def watch_model(img: Image.Image):
+    """Streams the model's progress: a status table plus one image per stage,
+    each filled in as soon as that stage finishes."""
+    if img is None:
+        raise gr.Error("Pick an example or upload a rainy image first.")
+    n = len(model_stages.STAGES)
+    images, notes, times = [None] * n, [""] * n, [None] * n
+    prefix = "" if model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
+
+    def table(running: int) -> str:
+        rows = []
+        for i, name in enumerate(model_stages.STAGES):
+            if times[i] is not None:
+                status = f"done in {times[i]:.1f}s"
+            elif i == running:
+                status = "**running...**"
+            else:
+                status = "waiting"
+            rows.append(f"| {i + 1} | {name} | {status} | {notes[i]} |")
+        total = sum(t for t in times if t is not None)
+        footer = f"\n\n**Total: {total:.1f}s** on this laptop's CPU." if all(t is not None for t in times) else ""
+        return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
+
+    yield [table(0)] + images
+    for i, secs, im, note in model_stages.run_stages(img):
+        if i == -1:
+            prefix = f"Model loaded in {secs:.0f}s.\n\n"
+            yield [table(0)] + images
+            continue
+        times[i], notes[i], images[i] = secs, note, im
+        yield [table(i + 1)] + images
+
+
 HEADER = """
 # Raindrop, Streak & Glare Removal for Dashcam and CCTV Footage
 Water sitting on the camera's own glass during rain: droplets that block and blur the scene,
@@ -181,6 +219,33 @@ with gr.Blocks() as demo:
             label="Clean KITTI frames",
         )
         add_btn.click(add_rain, [clean_in, intensity, context, seed], [rain_out, mask_out])
+        send_btn = gr.Button("Send this rainy frame to the step-by-step view")
+
+    with gr.Tab("Watch the model, step by step"):
+        gr.Markdown(
+            "Runs the pretrained UnReflectAnything model one stage at a time and shows what each stage produces, "
+            "as it happens. A full run takes about 1–2 minutes on this laptop's CPU; the table shows where it is."
+        )
+        with gr.Row():
+            with gr.Column(scale=1):
+                watch_in = gr.Image(type="pil", label="Rainy image")
+                watch_btn = gr.Button("Run step by step", variant="primary")
+            with gr.Column(scale=2):
+                watch_status = gr.Markdown()
+        gr.Examples(
+            examples=[[str(p)] for p in sorted((ASSETS / "rainy").glob("*.png"), key=lambda p: int(p.stem))],
+            inputs=[watch_in],
+            label="Real rainy photos (DeRaindrop)",
+        )
+        stage_imgs = []
+        with gr.Row():
+            for name in model_stages.STAGES[:3]:
+                stage_imgs.append(gr.Image(type="pil", label=name, interactive=False))
+        with gr.Row():
+            for name in model_stages.STAGES[3:]:
+                stage_imgs.append(gr.Image(type="pil", label=name, interactive=False))
+        watch_btn.click(watch_model, watch_in, [watch_status] + stage_imgs)
+        send_btn.click(lambda im: im, rain_out, watch_in)
 
     with gr.Tab("Remove rain (baseline)"):
         gr.Markdown(
@@ -206,4 +271,7 @@ with gr.Blocks() as demo:
             gr.Button("Run the stock model").click(run_stock_live, live_in, live_out)
 
 if __name__ == "__main__":
+    # Load the model in the background now, so the first step-by-step run
+    # doesn't sit through a ~1.5 min load in front of an audience.
+    threading.Thread(target=model_stages._load, daemon=True).start()
     demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
