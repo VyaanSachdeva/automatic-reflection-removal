@@ -20,6 +20,7 @@ Run:  .venv\\Scripts\\python.exe demo_app.py
 """
 from __future__ import annotations
 
+import json
 import os
 import random
 import subprocess
@@ -125,7 +126,33 @@ def _summary_md() -> str:
         p, s = sum(x[0] for x in scores) / n, sum(x[1] for x in scores) / n
         beats = "–" if key == "rainy" else f"{sum(x[0] > e['rainy_scores'][0] and x[1] > e['rainy_scores'][1] for x, e in zip(scores, EXAMPLES.values()))} of {n}"
         md += f"| {ROW_LABELS[key]} | {p:.2f} | {s:.3f} | {beats} |\n"
-    return md + SUMMARY_NOTES + _vrgs_gap_md()
+    return md + SUMMARY_NOTES + _vrgs_gap_md() + _finetune_md()
+
+
+FINETUNE_RESULTS = REPO / "eval_results" / "deraindrop_vrgs_finetune.json"
+
+
+def _finetune_md() -> str:
+    """finetune_deraindrop.py's evaluation of DeRaindrop before and after VRGS fine-tuning."""
+    if not FINETUNE_RESULTS.exists():
+        return ""
+    r = json.loads(FINETUNE_RESULTS.read_text())
+    md = (
+        "\n\n**First step on the baseline: DeRaindrop fine-tuned on VRGS rain** "
+        f"({r.get('run', 'short CPU run')}). Held-out frames were never trained on.\n\n"
+        "| | VRGS dashcam/CCTV, held out | Real photos (DeRaindrop test set) |\n|---|---|---|\n"
+    )
+    for label in ("rainy input", "DeRaindrop (released)", "DeRaindrop + VRGS fine-tune"):
+        cells = []
+        for split in ("vrgs_heldout", "real_test_a"):
+            s = r[split][label]
+            beats = f" (beats input on {s['beats_input']} of {r[split]['images']})" if "beats_input" in s else ""
+            cells.append(f"{s['psnr']:.2f} dB / {s['ssim']:.3f}{beats}")
+        md += f"| {label[0].upper() + label[1:]} | {cells[0]} | {cells[1]} |\n"
+    return md + (
+        "\nA small step, from about 20 minutes of CPU training: it moves toward dashcam/CCTV rain while keeping nearly "
+        "all of its real-photo performance. The full GPU run is the same recipe at scale."
+    )
 
 
 SUMMARY_NOTES = """
@@ -180,10 +207,14 @@ def show_example(name: str):
     return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["fix"], md
 
 
-def run_deraindrop_live(img: Image.Image):
+DRN_VERSIONS = {"Released": derainnet.WEIGHTS, "Fine-tuned on VRGS": derainnet.FINETUNED}
+DRN_CHOICES = [k for k, p in DRN_VERSIONS.items() if p.exists()]
+
+
+def run_deraindrop_live(img: Image.Image, version: str = "Released"):
     if img is None:
         raise gr.Error("Upload or pick a rainy image first.")
-    out, att = derainnet.derain(_fit(img.convert("RGB")))
+    out, att = derainnet.derain(_fit(img.convert("RGB")), DRN_VERSIONS[version])
     return out, model_stages._heatmap(att)
 
 
@@ -322,10 +353,11 @@ with gr.Blocks() as demo:
         with gr.Row():
             send_btn = gr.Button("Send this rainy frame to the step-by-step view")
             vrgs_drn_btn = gr.Button("Try DeRaindrop on this rainy frame (about 10 seconds)")
+        vrgs_drn_ver = gr.Radio(DRN_CHOICES, value=DRN_CHOICES[0], label="DeRaindrop version")
         with gr.Row():
             vrgs_drn_out = gr.Image(type="pil", label="DeRaindrop output", interactive=False)
             vrgs_drn_att = gr.Image(type="pil", label="DeRaindrop's raindrop map", interactive=False)
-        vrgs_drn_btn.click(run_deraindrop_live, rain_out, [vrgs_drn_out, vrgs_drn_att])
+        vrgs_drn_btn.click(run_deraindrop_live, [rain_out, vrgs_drn_ver], [vrgs_drn_out, vrgs_drn_att])
 
     with gr.Tab("Watch the model, step by step"):
         gr.Markdown(
@@ -384,13 +416,14 @@ with gr.Blocks() as demo:
 
         with gr.Accordion("Try your own rainy image", open=False):
             live_in = gr.Image(type="pil", label="Rainy image")
+            live_drn_ver = gr.Radio(DRN_CHOICES, value=DRN_CHOICES[0], label="DeRaindrop version")
             with gr.Row():
                 live_drn_out = gr.Image(type="pil", label="DeRaindrop output")
                 live_drn_att = gr.Image(type="pil", label="DeRaindrop's raindrop map")
                 live_out = gr.Image(type="pil", label="Stock UnReflectAnything output")
             with gr.Row():
                 gr.Button("Run DeRaindrop (about 10 seconds)", variant="primary").click(
-                    run_deraindrop_live, live_in, [live_drn_out, live_drn_att])
+                    run_deraindrop_live, [live_in, live_drn_ver], [live_drn_out, live_drn_att])
                 gr.Button("Run stock UnReflectAnything (about 1–2 minutes)").click(run_stock_live, live_in, live_out)
 
 if __name__ == "__main__":

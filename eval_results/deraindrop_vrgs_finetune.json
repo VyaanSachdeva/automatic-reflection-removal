@@ -1,0 +1,15 @@
+{
+  "run": "CPU, 20 min, 127 steps of batch 2 (256px crops, half VRGS / half real DeRaindrop pairs), lr 2e-5",
+  "vrgs_heldout": {
+    "images": 10,
+    "rainy input": {"psnr": 21.3, "ssim": 0.93},
+    "DeRaindrop (released)": {"psnr": 21.69, "ssim": 0.907, "beats_input": 0},
+    "DeRaindrop + VRGS fine-tune": {"psnr": 22.13, "ssim": 0.912, "beats_input": 1}
+  },
+  "real_test_a": {
+    "images": 20,
+    "rainy input": {"psnr": 23.33, "ssim": 0.832},
+    "DeRaindrop (released)": {"psnr": 30.83, "ssim": 0.909, "beats_input": 20},
+    "DeRaindrop + VRGS fine-tune": {"psnr": 30.54, "ssim": 0.909, "beats_input": 20}
+  }
+}
