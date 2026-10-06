@@ -75,9 +75,28 @@ STAGES = [
 ]
 
 
-def run_stages(img: Image.Image, threshold: float = 0.3):
+def ground_truth_mask(rainy: Image.Image, clean: Image.Image, thresh: float = 0.06) -> torch.Tensor:
+    """Where a rainy photo differs from its clean ground truth: the actual
+    droplets. [1,1,H,W] bool at the photo's own resolution. Only possible for
+    paired data (DeRaindrop), so it's a diagnostic -- "what if detection were
+    right" -- not something available on arbitrary footage."""
+    r = TF.to_tensor(rainy.convert("RGB"))
+    g = TF.to_tensor(clean.convert("RGB").resize(rainy.size))
+    d = (r - g).abs().mean(0, keepdim=True).unsqueeze(0)
+    return F.avg_pool2d(d, 5, 1, 2) > thresh
+
+
+def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Tensor | None = None,
+               composite: bool = False):
     """Generator. Yields (stage_index, seconds, image, note) as each stage
-    finishes; stage_index -1 is model loading."""
+    finishes; stage_index -1 is model loading.
+
+    mask_override: [1,1,H,W] bool at the input's resolution; replaces the
+    model's own detector when choosing what to repair.
+    composite: keep the original pixels everywhere outside the repair mask
+    (blended at the input's full resolution), instead of the decoder's
+    re-rendering of the whole image, which softens detail everywhere.
+    """
     if _wrapper is None:
         t = time.perf_counter()
         _load()
@@ -106,9 +125,15 @@ def run_stages(img: Image.Image, threshold: float = 0.3):
         )
 
         t = time.perf_counter()
-        dil = max(1, x.shape[-1] // (patch * 4))
-        dil = dil + 1 if dil % 2 == 0 else dil
-        pixel_mask = F.max_pool2d(hl.float(), kernel_size=dil, stride=1, padding=dil // 2) > threshold
+        if mask_override is not None:
+            pixel_mask = F.interpolate(mask_override.float(), size=x.shape[-2:], mode="nearest")
+            pixel_mask = F.max_pool2d(pixel_mask, kernel_size=5, stride=1, padding=2) > 0.5
+            source = "ground-truth droplet mask"
+        else:
+            dil = max(1, x.shape[-1] // (patch * 4))
+            dil = dil + 1 if dil % 2 == 0 else dil
+            pixel_mask = F.max_pool2d(hl.float(), kernel_size=dil, stride=1, padding=dil // 2) > threshold
+            source = "model's own detector"
         soft = "soft" in inner.token_inpainter_class_name.lower()
         patch_mask = _M.pixel_mask_to_patch_mask(pixel_mask, patch_size=patch, threshold=0, invert=False, soft=soft)
         if soft:
@@ -116,6 +141,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3):
         n_marked = int((patch_mask.float() > 0.5).sum().item())
         hl_overlay_mask = F.interpolate(pixel_mask.float(), size=x.shape[-2:], mode="nearest")
         yield 2, time.perf_counter() - t, _overlay(x, hl_overlay_mask), (
+            f"From the {source}: {100 * pixel_mask.float().mean().item():.1f}% of pixels, "
             f"{n_marked:,} of {n_tok:,} patches ({100 * n_marked / n_tok:.1f}%) marked for repair, in red"
         )
 
@@ -144,4 +170,11 @@ def run_stages(img: Image.Image, threshold: float = 0.3):
             if name != "highlight":
                 out = dec(completed).clamp(0, 1)
         out = TF.resize(out, [orig_h, orig_w], antialias=True)
-        yield 4, time.perf_counter() - t, TF.to_pil_image(out[0]), "Final output, resized back to the original size"
+        note = "Final output, resized back to the original size"
+        if composite:
+            m = F.interpolate(pixel_mask.float(), size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+            m = F.avg_pool2d(m, 5, 1, 2).clamp(0, 1)
+            original = TF.to_tensor(img.convert("RGB")).unsqueeze(0)
+            out = (out * m + original * (1 - m)).clamp(0, 1)
+            note += "; original pixels kept outside the repaired regions"
+        yield 4, time.perf_counter() - t, TF.to_pil_image(out[0]), note

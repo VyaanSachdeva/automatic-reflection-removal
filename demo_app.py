@@ -27,6 +27,7 @@ import threading
 from pathlib import Path
 
 import gradio as gr
+import numpy as np
 import torch
 from PIL import Image
 from torchvision.transforms import functional as TF
@@ -78,12 +79,16 @@ def _load_examples() -> dict:
         if not (out_path.exists() and gt_path.exists()):
             continue
         rainy, out, gt = Image.open(path), Image.open(out_path), Image.open(gt_path)
+        fix_path = ASSETS / "gtmask_output" / path.name
+        fix = Image.open(fix_path) if fix_path.exists() else None
         examples[f"Example {len(examples) + 1}"] = {
             "rainy": rainy,
             "out": out,
             "gt": gt,
+            "fix": fix,
             "rainy_scores": _scores(rainy, gt),
             "out_scores": _scores(out, gt),
+            "fix_scores": _scores(fix, gt) if fix is not None else None,
         }
     return examples
 
@@ -103,15 +108,40 @@ def _summary_md() -> str:
         e["out_scores"][0] < e["rainy_scores"][0] and e["out_scores"][1] < e["rainy_scores"][1]
         for e in EXAMPLES.values()
     )
-    return (
+    md = (
         f"**Average over {n} real DeRaindrop test images** (higher is better)\n\n"
         "| | PSNR (dB) | SSIM |\n|---|---|---|\n"
         f"| Rainy input vs. clean ground truth | {rp:.2f} | {rs:.3f} |\n"
-        f"| Stock UnReflectAnything output vs. clean ground truth | {op:.2f} | {os_:.3f} |\n\n"
-        f"**On {worse} of {n} images the stock model scores lower than the untouched rainy input on both metrics.** "
-        "It leaves the droplets in place and softens the rest of the image, so a model trained for this specific "
-        "degradation is needed."
+        f"| Stock UnReflectAnything output vs. clean ground truth | {op:.2f} | {os_:.3f} |\n"
     )
+    fixes = [e["fix_scores"] for e in EXAMPLES.values() if e["fix_scores"] is not None]
+    if len(fixes) == n:
+        fp, fs = sum(f[0] for f in fixes) / n, sum(f[1] for f in fixes) / n
+        md += f"| Same model, correct droplet mask + original pixels kept | {fp:.2f} | {fs:.3f} |\n"
+    md += (
+        f"\n**On {worse} of {n} images the stock model scores lower than the untouched rainy input on both metrics.** "
+        "Its detector looks for bright highlights, not droplets, so it repairs the wrong places and re-renders the "
+        "rest of the image softer."
+    )
+    if len(fixes) == n:
+        better = sum(
+            e["fix_scores"][0] > e["rainy_scores"][0] and e["fix_scores"][1] > e["rainy_scores"][1]
+            for e in EXAMPLES.values()
+        )
+        md += f" **With the correct droplet mask, the same untrained pipeline beats the rainy input on {better} of {n}.**"
+        if better > n / 2:
+            md += (
+                " So the repair stages can do the job; detection is the missing piece, and training the detector "
+                "on VRGS rain is exactly what this project's GPU run is for."
+            )
+        else:
+            md += (
+                " Pointing it at the right regions isn't enough: droplets touch roughly half to three-quarters of the "
+                "image's 16×16 patches, so the inpainter has almost no clean context left and fills them with dark "
+                "blotches (the large-hole failure the original authors note). Both the detector and the inpainter "
+                "need training on this kind of degradation, which is what VRGS supplies and the GPU run is for."
+            )
+    return md
 
 
 def show_example(name: str):
@@ -122,7 +152,10 @@ def show_example(name: str):
         f"| Rainy input | {rp:.2f} | {rs:.3f} |\n"
         f"| Stock model output | {op:.2f} | {os_:.3f} |\n"
     )
-    return e["rainy"], e["out"], e["gt"], md
+    if e["fix_scores"] is not None:
+        fp, fs = e["fix_scores"]
+        md += f"| Correct droplet mask + original pixels kept | {fp:.2f} | {fs:.3f} |\n"
+    return e["rainy"], e["out"], e["fix"], e["gt"], md
 
 
 def run_stock_live(img: Image.Image):
@@ -143,11 +176,35 @@ def run_stock_live(img: Image.Image):
         return Image.open(out_file).copy()
 
 
-def watch_model(img: Image.Image):
+MODES = [
+    "Stock model as-is",
+    "Stock detector, keep original pixels outside repairs",
+    "Correct droplet mask, keep original pixels (DeRaindrop examples only)",
+]
+
+
+def _find_clean(img: Image.Image):
+    """The clean ground truth for an image, if it's one of the DeRaindrop examples."""
+    a = np.asarray(img.convert("RGB"), dtype=np.int16)
+    for e in EXAMPLES.values():
+        b = np.asarray(e["rainy"].convert("RGB"), dtype=np.int16)
+        if a.shape == b.shape and np.abs(a - b).mean() < 0.5:
+            return e["gt"]
+    return None
+
+
+def watch_model(img: Image.Image, mode: str):
     """Streams the model's progress: a status table plus one image per stage,
     each filled in as soon as that stage finishes."""
     if img is None:
         raise gr.Error("Pick an example or upload a rainy image first.")
+    clean = _find_clean(img)
+    mask_override = None
+    if mode == MODES[2]:
+        if clean is None:
+            raise gr.Error("The correct droplet mask comes from the clean photo, so it only works on the DeRaindrop examples below.")
+        mask_override = model_stages.ground_truth_mask(img, clean)
+    composite = mode != MODES[0]
     n = len(model_stages.STAGES)
     images, notes, times = [None] * n, [""] * n, [None] * n
     prefix = "" if model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
@@ -163,11 +220,20 @@ def watch_model(img: Image.Image):
                 status = "waiting"
             rows.append(f"| {i + 1} | {name} | {status} | {notes[i]} |")
         total = sum(t for t in times if t is not None)
-        footer = f"\n\n**Total: {total:.1f}s** on this laptop's CPU." if all(t is not None for t in times) else ""
+        footer = ""
+        if all(t is not None for t in times):
+            footer = f"\n\n**Total: {total:.1f}s** on this laptop's CPU."
+            if clean is not None:
+                (ip, is_), (op, os_) = _scores(img, clean), _scores(images[-1], clean)
+                verdict = "better" if op > ip and os_ > is_ else "worse" if op < ip and os_ < is_ else "mixed"
+                footer += (
+                    f"\n\n**Against the clean photo:** rainy input {ip:.2f} dB / SSIM {is_:.3f} → "
+                    f"output {op:.2f} dB / SSIM {os_:.3f} (**{verdict}** than leaving it alone)"
+                )
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
     yield [table(0)] + images
-    for i, secs, im, note in model_stages.run_stages(img):
+    for i, secs, im, note in model_stages.run_stages(img, mask_override=mask_override, composite=composite):
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
             yield [table(0)] + images
@@ -229,6 +295,11 @@ with gr.Blocks() as demo:
         with gr.Row():
             with gr.Column(scale=1):
                 watch_in = gr.Image(type="pil", label="Rainy image")
+                watch_mode = gr.Radio(
+                    MODES, value=MODES[0], label="Which regions to repair",
+                    info="The stock detector looks for bright highlights, not droplets. The correct mask tests whether "
+                         "the rest of the pipeline can repair droplets once detection is right.",
+                )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
                 watch_status = gr.Markdown()
@@ -244,7 +315,7 @@ with gr.Blocks() as demo:
         with gr.Row():
             for name in model_stages.STAGES[3:]:
                 stage_imgs.append(gr.Image(type="pil", label=name, interactive=False))
-        watch_btn.click(watch_model, watch_in, [watch_status] + stage_imgs)
+        watch_btn.click(watch_model, [watch_in, watch_mode], [watch_status] + stage_imgs)
         send_btn.click(lambda im: im, rain_out, watch_in)
 
     with gr.Tab("Remove rain (baseline)"):
@@ -258,11 +329,12 @@ with gr.Blocks() as demo:
         with gr.Row():
             rainy_img = gr.Image(type="pil", label="Rainy input")
             stock_img = gr.Image(type="pil", label="Stock model output")
+            fix_img = gr.Image(type="pil", label="Correct droplet mask + original pixels kept")
             gt_img = gr.Image(type="pil", label="Clean ground truth")
         scores_md = gr.Markdown()
-        pick.change(show_example, pick, [rainy_img, stock_img, gt_img, scores_md])
+        pick.change(show_example, pick, [rainy_img, stock_img, fix_img, gt_img, scores_md])
         if names:
-            demo.load(show_example, pick, [rainy_img, stock_img, gt_img, scores_md])
+            demo.load(show_example, pick, [rainy_img, stock_img, fix_img, gt_img, scores_md])
 
         with gr.Accordion("Try your own rainy image (slow: about 1–2 minutes on this laptop's CPU)", open=False):
             with gr.Row():
