@@ -7,12 +7,14 @@ degradation to a clean driving frame.
 "Watch the model" runs the stock pretrained model one stage at a time
 (model_stages.py) and shows each stage's output as it finishes.
 
-"Remove rain" shows the stock pretrained UnReflectAnything model on real DeRaindrop
-rain/clean pairs, scored against ground truth. Outputs are precomputed
-(CPU inference is ~1-2 min/image) by running `ura inference` over
-DEMO_ASSETS/rainy into DEMO_ASSETS/stock_output; live upload is available
-but slow. Our own raindrop-trained model isn't shown yet -- it needs the
-GPU training run.
+"Remove rain" compares, on real DeRaindrop rain/clean pairs scored against
+ground truth: the stock pretrained UnReflectAnything model, the same model
+driven by DeRaindrop's raindrop detector (every rainy patch repaired), and
+DeRaindrop itself (derainnet.py), the open-source raindrop-specific baseline.
+Outputs are precomputed (UnReflectAnything takes ~1-2 min/image on CPU) into
+DEMO_ASSETS/{stock_output,drnmask_output,gtmask_output,deraindrop_output};
+DeRaindrop is fast enough (~10 s) to also run live. Our own raindrop-trained
+model isn't shown yet -- it needs the GPU training run.
 
 Run:  .venv\\Scripts\\python.exe demo_app.py
 """
@@ -34,6 +36,7 @@ from torchvision.transforms import functional as TF
 
 REPO = Path(__file__).parent
 sys.path.insert(0, str(REPO))
+import derainnet  # noqa: E402
 import metrics  # noqa: E402
 import model_stages  # noqa: E402
 from raindrop_render import RaindropRender  # noqa: E402
@@ -79,18 +82,29 @@ def _load_examples() -> dict:
         if not (out_path.exists() and gt_path.exists()):
             continue
         rainy, out, gt = Image.open(path), Image.open(out_path), Image.open(gt_path)
-        fix_path = ASSETS / "gtmask_output" / path.name
-        fix = Image.open(fix_path) if fix_path.exists() else None
-        examples[f"Example {len(examples) + 1}"] = {
-            "rainy": rainy,
-            "out": out,
-            "gt": gt,
-            "fix": fix,
-            "rainy_scores": _scores(rainy, gt),
-            "out_scores": _scores(out, gt),
-            "fix_scores": _scores(fix, gt) if fix is not None else None,
-        }
+        e = {"rainy": rainy, "out": out, "gt": gt,
+             "rainy_scores": _scores(rainy, gt), "out_scores": _scores(out, gt)}
+        for key, folder in OPTIONAL_OUTPUTS.items():
+            p = ASSETS / folder / path.name
+            e[key] = Image.open(p) if p.exists() else None
+            e[key + "_scores"] = _scores(e[key], gt) if e[key] is not None else None
+        examples[f"Example {len(examples) + 1}"] = e
     return examples
+
+
+# Precomputed outputs beyond the stock model's, keyed as in each example dict.
+OPTIONAL_OUTPUTS = {
+    "drnmask": "drnmask_output",  # UnReflectAnything + DeRaindrop's raindrop detector
+    "fix": "gtmask_output",  # UnReflectAnything + the ground-truth droplet mask
+    "drn": "deraindrop_output",  # DeRaindrop itself
+}
+ROW_LABELS = {
+    "rainy": "Rainy input (left alone)",
+    "out": "UnReflectAnything, stock (its highlight detector)",
+    "drnmask": "UnReflectAnything, raindrop detector: every rainy patch repaired",
+    "fix": "UnReflectAnything, correct droplet mask (upper bound on detection)",
+    "drn": "DeRaindrop (CVPR 2018, open-source raindrop model)",
+}
 
 
 EXAMPLES = _load_examples()
@@ -100,62 +114,77 @@ def _summary_md() -> str:
     if not EXAMPLES:
         return "_No precomputed results found in `" + str(ASSETS / "stock_output") + "`._"
     n = len(EXAMPLES)
-    rp = sum(e["rainy_scores"][0] for e in EXAMPLES.values()) / n
-    rs = sum(e["rainy_scores"][1] for e in EXAMPLES.values()) / n
-    op = sum(e["out_scores"][0] for e in EXAMPLES.values()) / n
-    os_ = sum(e["out_scores"][1] for e in EXAMPLES.values()) / n
-    worse = sum(
-        e["out_scores"][0] < e["rainy_scores"][0] and e["out_scores"][1] < e["rainy_scores"][1]
-        for e in EXAMPLES.values()
-    )
     md = (
-        f"**Average over {n} real DeRaindrop test images** (higher is better)\n\n"
-        "| | PSNR (dB) | SSIM |\n|---|---|---|\n"
-        f"| Rainy input vs. clean ground truth | {rp:.2f} | {rs:.3f} |\n"
-        f"| Stock UnReflectAnything output vs. clean ground truth | {op:.2f} | {os_:.3f} |\n"
+        f"**Average over {n} real DeRaindrop test images**, scored against the clean photo (higher is better)\n\n"
+        "| | PSNR (dB) | SSIM | Beats the rainy input on both |\n|---|---|---|---|\n"
     )
-    fixes = [e["fix_scores"] for e in EXAMPLES.values() if e["fix_scores"] is not None]
-    if len(fixes) == n:
-        fp, fs = sum(f[0] for f in fixes) / n, sum(f[1] for f in fixes) / n
-        md += f"| Same model, correct droplet mask + original pixels kept | {fp:.2f} | {fs:.3f} |\n"
-    md += (
-        f"\n**On {worse} of {n} images the stock model scores lower than the untouched rainy input on both metrics.** "
-        "Its detector looks for bright highlights, not droplets, so it repairs the wrong places and re-renders the "
-        "rest of the image softer."
+    for key in ROW_LABELS:
+        scores = [e[key + "_scores"] for e in EXAMPLES.values() if e.get(key + "_scores") is not None]
+        if len(scores) != n:
+            continue
+        p, s = sum(x[0] for x in scores) / n, sum(x[1] for x in scores) / n
+        beats = "–" if key == "rainy" else f"{sum(x[0] > e['rainy_scores'][0] and x[1] > e['rainy_scores'][1] for x, e in zip(scores, EXAMPLES.values()))} of {n}"
+        md += f"| {ROW_LABELS[key]} | {p:.2f} | {s:.3f} | {beats} |\n"
+    return md + SUMMARY_NOTES + _vrgs_gap_md()
+
+
+SUMMARY_NOTES = """
+- **Stock UnReflectAnything** looks for bright highlights, not droplets: it marks about 4% of patches, mostly in the
+  wrong places, and re-renders the rest of the image softer.
+- **Raindrop detector, every rainy patch repaired:** DeRaindrop's raindrop map now marks every rainy patch, but droplets
+  touch so many of the 16×16 patches that UnReflectAnything's inpainter has little clean context left and fills them
+  with dark blotches. Detection was only half the problem; the inpainter has never seen this degradation.
+- **DeRaindrop**, a model trained specifically on raindrops, is the strongest baseline here. But these photos come
+  from its own test set (same glass pane and camera it was trained with), so this is its best case.
+"""
+
+
+def _vrgs_gap_md() -> str:
+    """DeRaindrop on our own VRGS dashcam/CCTV rain (precomputed into vrgs_eval/),
+    i.e. away from the single glass-pane rig it was trained on."""
+    rows = []
+    for rainy_path in sorted((ASSETS / "vrgs_eval").glob("*_rainy.png")):
+        stem = rainy_path.name[: -len("_rainy.png")]
+        frame = stem.rsplit("_", 1)[0]
+        out_path, clean_path = ASSETS / "vrgs_eval" / f"{stem}_deraindrop.png", ASSETS / "clean_frames" / f"{frame}.png"
+        if out_path.exists() and clean_path.exists():
+            clean = Image.open(clean_path)
+            rows.append((_scores(Image.open(rainy_path), clean), _scores(Image.open(out_path), clean)))
+    if not rows:
+        return ""
+    n = len(rows)
+    avg = lambda i, j: sum(r[i][j] for r in rows) / n  # noqa: E731
+    beats = sum(r[1][0] > r[0][0] and r[1][1] > r[0][1] for r in rows)
+    return (
+        f"\n**Away from its home turf:** on {n} VRGS-rendered dashcam/CCTV frames (streaks and glare included), "
+        f"DeRaindrop goes from {avg(0, 0):.2f} dB / SSIM {avg(0, 1):.3f} (rainy) to {avg(1, 0):.2f} dB / SSIM "
+        f"{avg(1, 1):.3f}, beating the rainy input on {beats} of {n}. "
+        + VRGS_GAP_NOTE
     )
-    if len(fixes) == n:
-        better = sum(
-            e["fix_scores"][0] > e["rainy_scores"][0] and e["fix_scores"][1] > e["rainy_scores"][1]
-            for e in EXAMPLES.values()
-        )
-        md += f" **With the correct droplet mask, the same untrained pipeline beats the rainy input on {better} of {n}.**"
-        if better > n / 2:
-            md += (
-                " So the repair stages can do the job; detection is the missing piece, and training the detector "
-                "on VRGS rain is exactly what this project's GPU run is for."
-            )
-        else:
-            md += (
-                " Pointing it at the right regions isn't enough: droplets touch roughly half to three-quarters of the "
-                "image's 16×16 patches, so the inpainter has almost no clean context left and fills them with dark "
-                "blotches (the large-hole failure the original authors note). Both the detector and the inpainter "
-                "need training on this kind of degradation, which is what VRGS supplies and the GPU run is for."
-            )
-    return md
+
+
+VRGS_GAP_NOTE = (
+    "It leaves the sliding droplet trails and glare streaks almost untouched and only softens the frame: it was "
+    "trained on round droplets on a single glass pane and has never seen either. That gap is what VRGS training "
+    "targets (try it on the **Add rain** tab)."
+)
 
 
 def show_example(name: str):
     e = EXAMPLES[name]
-    (rp, rs), (op, os_) = e["rainy_scores"], e["out_scores"]
-    md = (
-        "| | PSNR (dB) | SSIM |\n|---|---|---|\n"
-        f"| Rainy input | {rp:.2f} | {rs:.3f} |\n"
-        f"| Stock model output | {op:.2f} | {os_:.3f} |\n"
-    )
-    if e["fix_scores"] is not None:
-        fp, fs = e["fix_scores"]
-        md += f"| Correct droplet mask + original pixels kept | {fp:.2f} | {fs:.3f} |\n"
-    return e["rainy"], e["out"], e["fix"], e["gt"], md
+    md = "| | PSNR (dB) | SSIM |\n|---|---|---|\n"
+    for key, label in ROW_LABELS.items():
+        if e.get(key + "_scores") is not None:
+            p, s = e[key + "_scores"]
+            md += f"| {label} | {p:.2f} | {s:.3f} |\n"
+    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["fix"], md
+
+
+def run_deraindrop_live(img: Image.Image):
+    if img is None:
+        raise gr.Error("Upload or pick a rainy image first.")
+    out, att = derainnet.derain(_fit(img.convert("RGB")))
+    return out, model_stages._heatmap(att)
 
 
 def run_stock_live(img: Image.Image):
@@ -177,10 +206,12 @@ def run_stock_live(img: Image.Image):
 
 
 MODES = [
-    "Stock model as-is",
+    "Raindrop detector: repair every rainy patch, keep original pixels elsewhere",
+    "Stock model as-is (its highlight detector)",
     "Stock detector, keep original pixels outside repairs",
     "Correct droplet mask, keep original pixels (DeRaindrop examples only)",
 ]
+RAINDROP_MODE, STOCK_MODE, GT_MODE = MODES[0], MODES[1], MODES[3]
 
 
 def _find_clean(img: Image.Image):
@@ -200,11 +231,12 @@ def watch_model(img: Image.Image, mode: str):
         raise gr.Error("Pick an example or upload a rainy image first.")
     clean = _find_clean(img)
     mask_override = None
-    if mode == MODES[2]:
+    if mode == GT_MODE:
         if clean is None:
             raise gr.Error("The correct droplet mask comes from the clean photo, so it only works on the DeRaindrop examples below.")
         mask_override = model_stages.ground_truth_mask(img, clean)
-    composite = mode != MODES[0]
+    composite = mode != STOCK_MODE
+    detector = "deraindrop" if mode == RAINDROP_MODE else "highlight"
     n = len(model_stages.STAGES)
     images, notes, times = [None] * n, [""] * n, [None] * n
     prefix = "" if model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
@@ -233,7 +265,8 @@ def watch_model(img: Image.Image, mode: str):
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
     yield [table(0)] + images
-    for i, secs, im, note in model_stages.run_stages(img, mask_override=mask_override, composite=composite):
+    for i, secs, im, note in model_stages.run_stages(img, mask_override=mask_override, composite=composite,
+                                                      detector=detector):
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
             yield [table(0)] + images
@@ -258,7 +291,8 @@ PIPELINE = """
 4. **Evaluation** uses DeRaindrop's real rain/clean photo pairs, which the model never trains on.
 
 Steps 1–3 are built and verified end-to-end. The full-scale training run is waiting on GPU time,
-so the "Remove rain" tab shows the stock pretrained model as the baseline to beat.
+so the "Remove rain" tab compares the existing models this project builds on and has to beat: stock
+UnReflectAnything, and DeRaindrop, an open-source raindrop-specific model.
 """
 
 with gr.Blocks() as demo:
@@ -285,7 +319,13 @@ with gr.Blocks() as demo:
             label="Clean KITTI frames",
         )
         add_btn.click(add_rain, [clean_in, intensity, context, seed], [rain_out, mask_out])
-        send_btn = gr.Button("Send this rainy frame to the step-by-step view")
+        with gr.Row():
+            send_btn = gr.Button("Send this rainy frame to the step-by-step view")
+            vrgs_drn_btn = gr.Button("Try DeRaindrop on this rainy frame (about 10 seconds)")
+        with gr.Row():
+            vrgs_drn_out = gr.Image(type="pil", label="DeRaindrop output", interactive=False)
+            vrgs_drn_att = gr.Image(type="pil", label="DeRaindrop's raindrop map", interactive=False)
+        vrgs_drn_btn.click(run_deraindrop_live, rain_out, [vrgs_drn_out, vrgs_drn_att])
 
     with gr.Tab("Watch the model, step by step"):
         gr.Markdown(
@@ -296,9 +336,10 @@ with gr.Blocks() as demo:
             with gr.Column(scale=1):
                 watch_in = gr.Image(type="pil", label="Rainy image")
                 watch_mode = gr.Radio(
-                    MODES, value=MODES[0], label="Which regions to repair",
-                    info="The stock detector looks for bright highlights, not droplets. The correct mask tests whether "
-                         "the rest of the pipeline can repair droplets once detection is right.",
+                    MODES, value=RAINDROP_MODE, label="Which regions to repair",
+                    info="The stock detector looks for bright highlights, not droplets, and marks only a few patches. "
+                         "The raindrop detector (borrowed from DeRaindrop) marks every rainy patch. The correct mask "
+                         "is the upper bound: what if detection were perfect?",
                 )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
@@ -318,29 +359,39 @@ with gr.Blocks() as demo:
         watch_btn.click(watch_model, [watch_in, watch_mode], [watch_status] + stage_imgs)
         send_btn.click(lambda im: im, rain_out, watch_in)
 
-    with gr.Tab("Remove rain (baseline)"):
+    with gr.Tab("Remove rain: baselines compared"):
         gr.Markdown(
-            "The **stock pretrained UnReflectAnything model**, built for highlights on object surfaces, run on real "
-            "rainy photos. It shows how far a general-purpose remover gets on raindrops, which is the gap this project targets."
+            "Two existing models on real rainy photos: **UnReflectAnything** (built for highlights on object surfaces; "
+            "this project's architecture) and **DeRaindrop** (CVPR 2018, an open-source model trained specifically on "
+            "raindrops). These are the baselines the project's VRGS-trained model has to beat."
         )
         gr.Markdown(_summary_md())
         names = list(EXAMPLES)
         pick = gr.Dropdown(names, value=names[0] if names else None, label="Real DeRaindrop test image")
         with gr.Row():
             rainy_img = gr.Image(type="pil", label="Rainy input")
-            stock_img = gr.Image(type="pil", label="Stock model output")
-            fix_img = gr.Image(type="pil", label="Correct droplet mask + original pixels kept")
             gt_img = gr.Image(type="pil", label="Clean ground truth")
+            drn_img = gr.Image(type="pil", label=ROW_LABELS["drn"])
+        with gr.Row():
+            stock_img = gr.Image(type="pil", label=ROW_LABELS["out"])
+            drnmask_img = gr.Image(type="pil", label=ROW_LABELS["drnmask"])
+            fix_img = gr.Image(type="pil", label=ROW_LABELS["fix"])
         scores_md = gr.Markdown()
-        pick.change(show_example, pick, [rainy_img, stock_img, fix_img, gt_img, scores_md])
+        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, fix_img, scores_md]
+        pick.change(show_example, pick, example_outputs)
         if names:
-            demo.load(show_example, pick, [rainy_img, stock_img, fix_img, gt_img, scores_md])
+            demo.load(show_example, pick, example_outputs)
 
-        with gr.Accordion("Try your own rainy image (slow: about 1–2 minutes on this laptop's CPU)", open=False):
+        with gr.Accordion("Try your own rainy image", open=False):
+            live_in = gr.Image(type="pil", label="Rainy image")
             with gr.Row():
-                live_in = gr.Image(type="pil", label="Rainy image")
-                live_out = gr.Image(type="pil", label="Stock model output")
-            gr.Button("Run the stock model").click(run_stock_live, live_in, live_out)
+                live_drn_out = gr.Image(type="pil", label="DeRaindrop output")
+                live_drn_att = gr.Image(type="pil", label="DeRaindrop's raindrop map")
+                live_out = gr.Image(type="pil", label="Stock UnReflectAnything output")
+            with gr.Row():
+                gr.Button("Run DeRaindrop (about 10 seconds)", variant="primary").click(
+                    run_deraindrop_live, live_in, [live_drn_out, live_drn_att])
+                gr.Button("Run stock UnReflectAnything (about 1–2 minutes)").click(run_stock_live, live_in, live_out)
 
 if __name__ == "__main__":
     # Load the model in the background now, so the first step-by-step run

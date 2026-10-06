@@ -87,12 +87,15 @@ def ground_truth_mask(rainy: Image.Image, clean: Image.Image, thresh: float = 0.
 
 
 def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Tensor | None = None,
-               composite: bool = False):
+               composite: bool = False, detector: str = "highlight", rain_threshold: float = 0.2):
     """Generator. Yields (stage_index, seconds, image, note) as each stage
     finishes; stage_index -1 is model loading.
 
     mask_override: [1,1,H,W] bool at the input's resolution; replaces the
     model's own detector when choosing what to repair.
+    detector: "highlight" is the model's own (specular) detector; "deraindrop"
+    swaps in DeRaindrop's raindrop attention map (derainnet.py), thresholded at
+    rain_threshold, so every rainy patch is marked for repair.
     composite: keep the original pixels everywhere outside the repair mask
     (blended at the input's full resolution), instead of the decoder's
     re-rendering of the whole image, which softens detail everywhere.
@@ -118,14 +121,25 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         )
 
         t = time.perf_counter()
-        hl = inner.decoders["highlight"](tokens)
+        if detector == "deraindrop":
+            import derainnet
+
+            hl = F.interpolate(derainnet.attention_map(img), size=x.shape[-2:], mode="bilinear", align_corners=False)
+            what = "DeRaindrop's raindrop detector: likelihood of 'raindrop here'"
+        else:
+            hl = inner.decoders["highlight"](tokens)
+            what = "The model's highlight detector: likelihood of 'needs removing'"
         yield 1, time.perf_counter() - t, _heatmap(hl), (
-            f"Per-pixel likelihood of 'needs removing' (brighter = more likely; square-root scaled so faint "
+            f"{what} (brighter = more likely; square-root scaled so faint "
             f"detections show). Peak {hl.max().item():.2f}, mean {hl.mean().item():.3f}"
         )
 
         t = time.perf_counter()
-        if mask_override is not None:
+        if detector == "deraindrop" and mask_override is None:
+            # Droplet edges refract too but score lower than their cores, so grow the mask a little.
+            pixel_mask = F.max_pool2d((hl > rain_threshold).float(), kernel_size=9, stride=1, padding=4) > 0.5
+            source = "raindrop detector (every rainy patch)"
+        elif mask_override is not None:
             pixel_mask = F.interpolate(mask_override.float(), size=x.shape[-2:], mode="nearest")
             pixel_mask = F.max_pool2d(pixel_mask, kernel_size=5, stride=1, padding=2) > 0.5
             source = "ground-truth droplet mask"
