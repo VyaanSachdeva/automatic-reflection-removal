@@ -1,7 +1,8 @@
 """
 DeRaindrop's attentive generator (Qian et al., "Attentive Generative Adversarial
 Network for Raindrop Removal from A Single Image", CVPR 2018,
-https://github.com/rui1996/DeRaindrop), ported to current PyTorch and CPU.
+https://github.com/rui1996/DeRaindrop), ported to current PyTorch. Runs on the
+GPU when there is one (RAIN_DEVICE=cpu forces the CPU); results come back on the CPU.
 
 The layers are copied unchanged from the official models/generator.py so the
 released weights/gen.pkl loads as-is; only the hard-coded .cuda() calls and the
@@ -27,6 +28,7 @@ from PIL import Image
 from raindrop_paths import RAINDROP_ROOT
 
 ITERATION = 4
+DEVICE = torch.device(os.environ.get("RAIN_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu"))
 WEIGHTS = Path(os.environ.get(
     "DERAINDROP_WEIGHTS",
     RAINDROP_ROOT / "derainnet_code" / "weights" / "gen.pkl",
@@ -126,7 +128,7 @@ def load(weights: Path = WEIGHTS) -> Generator:
     if weights not in _models:
         m = Generator()
         m.load_state_dict(torch.load(weights, map_location="cpu"))
-        _models[weights] = m.eval()
+        _models[weights] = m.eval().to(DEVICE)
     return _models[weights]
 
 
@@ -143,7 +145,7 @@ def attention_map(img: Image.Image) -> torch.Tensor:
     """Just the raindrop detector: [1,1,H,W] in [0,1] at the input's size.
     About a third of a full derain() on CPU."""
     _, w, h, w4, h4, x = _prep(img)
-    att = load().attention(x)[-1].clamp(0, 1)
+    att = load().attention(x.to(DEVICE))[-1].clamp(0, 1).cpu()
     return F.pad(att, (0, w - w4, 0, h - h4))
 
 
@@ -153,9 +155,9 @@ def derain(img: Image.Image, weights: Path = WEIGHTS) -> tuple[Image.Image, torc
     both at the input's own size."""
     model = load(weights)
     rgb, w, h, w4, h4, x = _prep(img)
-    masks, out = model(x)
-    out = out.clamp(0, 1)[:, [2, 1, 0]]  # BGR -> RGB
-    att = masks[-1].clamp(0, 1)
+    masks, out = model(x.to(DEVICE))
+    out = out.clamp(0, 1)[:, [2, 1, 0]].cpu()  # BGR -> RGB
+    att = masks[-1].clamp(0, 1).cpu()
     if (w4, h4) != (w, h):  # restore the cropped border from the input, so sizes match
         full = torch.from_numpy(np.asarray(rgb, dtype=np.float32).transpose(2, 0, 1) / 255.0).unsqueeze(0)
         full[:, :, :h4, :w4] = out

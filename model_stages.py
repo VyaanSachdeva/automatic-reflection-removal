@@ -13,6 +13,7 @@ site-packages temporarily put first.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -24,6 +25,8 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision.transforms import functional as TF
 
+# The GPU when there is one; RAIN_DEVICE=cpu forces the CPU (benchmark_efficiency.py does).
+DEVICE = torch.device(os.environ.get("RAIN_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu"))
 _wrapper = None
 _M = None  # the package's models module, for its mask helpers
 _load_lock = threading.Lock()
@@ -43,7 +46,7 @@ def _load():
         try:
             import unreflectanything as ura
 
-            wrapper = ura.model(pretrained=True, device="cpu")
+            wrapper = ura.model(pretrained=True, device=str(DEVICE))
             wrapper.eval()
             _M = sys.modules["models"]
             _wrapper = wrapper
@@ -145,7 +148,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
     inner = _wrapper._model
     side = _wrapper.image_size
     orig_w, orig_h = img.size
-    x = TF.resize(TF.to_tensor(img.convert("RGB")).unsqueeze(0), [side, side], antialias=True)
+    x = TF.resize(TF.to_tensor(img.convert("RGB")).unsqueeze(0), [side, side], antialias=True).to(DEVICE)
     patch = inner.patch_size
 
     with torch.no_grad():
@@ -153,7 +156,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         tokens = inner.dinov3(inner.dinov3.preprocess_image(x))["selected_hidden_states"]
         n_tok, dim = tokens[0].shape[1], tokens[0].shape[2]
         grid = int(n_tok**0.5)
-        yield 0, time.perf_counter() - t, TF.to_pil_image(x[0]), (
+        yield 0, time.perf_counter() - t, TF.to_pil_image(x[0].cpu()), (
             f"{len(tokens)} feature layers, each {grid}×{grid} = {n_tok:,} patches of {dim:,} numbers"
         )
 
@@ -161,7 +164,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         if detector == "deraindrop":
             import derainnet
 
-            hl = F.interpolate(derainnet.attention_map(img), size=x.shape[-2:], mode="bilinear", align_corners=False)
+            hl = F.interpolate(derainnet.attention_map(img).to(DEVICE), size=x.shape[-2:], mode="bilinear", align_corners=False)
             what = "DeRaindrop's raindrop detector: likelihood of 'raindrop here'"
         else:
             hl = inner.decoders["highlight"](tokens)
@@ -177,7 +180,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
             pixel_mask = F.max_pool2d((hl > rain_threshold).float(), kernel_size=9, stride=1, padding=4) > 0.5
             source = "raindrop detector (every rainy patch)"
         elif mask_override is not None:
-            pixel_mask = F.interpolate(mask_override.float(), size=x.shape[-2:], mode="nearest")
+            pixel_mask = F.interpolate(mask_override.float().to(DEVICE), size=x.shape[-2:], mode="nearest")
             pixel_mask = F.max_pool2d(pixel_mask, kernel_size=5, stride=1, padding=2) > 0.5
             source = "ground-truth droplet mask"
         else:
@@ -225,10 +228,10 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         for name, dec in inner.decoders.items():
             if name != "highlight":
                 out = dec(completed).clamp(0, 1)
-        out = TF.resize(out, [orig_h, orig_w], antialias=True)
+        out = TF.resize(out, [orig_h, orig_w], antialias=True).cpu()
         note = "Final output, resized back to the original size"
         if composite:
-            m = F.interpolate(pixel_mask.float(), size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+            m = F.interpolate(pixel_mask.float().cpu(), size=(orig_h, orig_w), mode="bilinear", align_corners=False)
             m = F.avg_pool2d(m, 5, 1, 2).clamp(0, 1)
             original = TF.to_tensor(img.convert("RGB")).unsqueeze(0)
             out = (out * m + original * (1 - m)).clamp(0, 1)

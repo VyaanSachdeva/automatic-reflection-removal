@@ -9,8 +9,8 @@ unreflectanything==1.1.1
 transformers @ git+https://github.com/huggingface/transformers@2fe43376cdde02b7ffcf117e6eb9aa4375fb2dd1
 huggingface-hub==0.36.2
 
-# Demo
-gradio==6.27.0
+# Demo. Pinned: gradio 6.18+ needs huggingface-hub>=1.16, which conflicts with the pin above
+gradio==6.17.3
 
 # Core
 numpy==2.4.2

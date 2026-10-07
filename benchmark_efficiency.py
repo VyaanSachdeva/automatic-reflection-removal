@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import random
 import statistics
@@ -35,10 +36,13 @@ from PIL import Image
 from torch.utils.flop_counter import FlopCounterMode
 from torchvision.transforms import functional as TF
 
-import derainnet
-import model_stages as ms
-from raindrop_paths import RAINDROP_ROOT
-from raindrop_render import RaindropRender
+# These numbers are CPU measurements (RSS memory, CPU threads), so keep the
+# models off the GPU even when there is one.
+os.environ["RAIN_DEVICE"] = "cpu"
+import derainnet  # noqa: E402
+import model_stages as ms  # noqa: E402
+from raindrop_paths import RAINDROP_ROOT  # noqa: E402
+from raindrop_render import RaindropRender  # noqa: E402
 
 ASSETS = RAINDROP_ROOT / "demo_assets"
 RESULTS = Path(__file__).parent / "eval_results" / "efficiency.json"

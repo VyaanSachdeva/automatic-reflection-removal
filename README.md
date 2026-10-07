@@ -81,6 +81,10 @@ Measured on an Intel Core i7-1065G7 laptop CPU, batch size 1
 
 Peak memory is 5.5 GB. The frozen DINOv3 encoder accounts for 61% of the pipeline's latency.
 
+On an NVIDIA RTX 4060 Laptop GPU (8 GB) the current pipeline takes **0.87 s** per image (about 60× faster), with
+5.4 GB peak VRAM at its 896 px working size. The demo and DeRaindrop use the GPU automatically; set
+`RAIN_DEVICE=cpu` to force the CPU. `benchmark_efficiency.py` always measures on the CPU.
+
 ## Getting started
 
 ### 1. Install
@@ -98,7 +102,8 @@ pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorc
 pip install -r requirements.txt
 ```
 
-The pretrained UnReflectAnything weights (3.4 GB) download automatically on first use.
+The pretrained UnReflectAnything weights (3.4 GB) and the DINOv3 encoder (1.2 GB) download automatically on first
+use. On Windows, set `PYTHONUTF8=1` so the training logger can print its symbols.
 
 ### 2. Data
 
@@ -132,7 +137,7 @@ For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file
 | Preview VRGS on KITTI frames | `python raindrop_render.py` |
 | Fine-tune DeRaindrop on VRGS | `python finetune_deraindrop.py --minutes 20` |
 | Measure efficiency | `python benchmark_efficiency.py` |
-| Training smoke test (CPU, 224 px) | `python train_raindrop.py --config config/raindrop_smoke_test.yaml` |
+| Training smoke test (224 px, 8 images; ~1 min on a GPU) | `python train_raindrop.py --config config/raindrop_smoke_test.yaml` |
 
 `config/train.yaml` holds the original paper's full-scale settings (896 px, batch size and schedule). It is the
 reference for the full GPU training config.
@@ -144,7 +149,7 @@ reference for the full GPU training config.
 | [raindrop_render.py](raindrop_render.py) | VRGS: the rain-on-glass renderer |
 | [raindrop_engine.py](raindrop_engine.py), [train_raindrop.py](train_raindrop.py) | Training with VRGS as the degradation |
 | [model_stages.py](model_stages.py) | Runs the model one stage at a time; neighbour fill |
-| [derainnet.py](derainnet.py) | DeRaindrop's generator, ported to current PyTorch on CPU |
+| [derainnet.py](derainnet.py) | DeRaindrop's generator, ported to current PyTorch (GPU when available, else CPU) |
 | [finetune_deraindrop.py](finetune_deraindrop.py) | Fine-tunes DeRaindrop on VRGS + real pairs |
 | [demo_app.py](demo_app.py), [run_demo.bat](run_demo.bat) | Gradio demo |
 | [benchmark_efficiency.py](benchmark_efficiency.py) | Parameters, FLOPs, latency, memory |
