@@ -45,7 +45,9 @@ import torch.nn.functional as F
 from PIL import Image
 from torchvision.transforms import functional as TF
 
-FLARE_ROOT = Path(r"C:\Users\sachd\Downloads\raindrop_project\extracted\Flare7K\Flare7Kpp\Flare7K\Scattering_Flare")
+from raindrop_paths import RAINDROP_ROOT
+
+FLARE_ROOT = RAINDROP_ROOT / "extracted" / "Flare7K" / "Flare7Kpp" / "Flare7K" / "Scattering_Flare"
 FLARE_CATEGORIES = ["Streak", "Glare_with_shimmer", "Light_Source", "Core"]
 MAX_DROPLETS = 20
 
@@ -299,11 +301,9 @@ class RaindropRender(nn.Module):
 
 
 if __name__ == "__main__":
-    from pathlib import Path as _P
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    kitti_dir = _P(r"C:\Users\sachd\Downloads\raindrop_project\extracted\kitti_2011_09_26_drive_0001")
-    out_dir = _P(r"C:\Users\sachd\Downloads\raindrop_project\vrgs_preview_batched")
+    kitti_dir = RAINDROP_ROOT / "extracted" / "kitti_2011_09_26_drive_0001"
+    out_dir = RAINDROP_ROOT / "vrgs_preview_batched"
     out_dir.mkdir(exist_ok=True)
 
     images = sorted(kitti_dir.rglob("*.png"))[:4]

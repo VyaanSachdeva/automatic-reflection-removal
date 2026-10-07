@@ -37,9 +37,10 @@ from torchvision.transforms import functional as TF
 
 import derainnet
 import model_stages as ms
+from raindrop_paths import RAINDROP_ROOT
 from raindrop_render import RaindropRender
 
-ASSETS = Path(r"C:\Users\sachd\Downloads\raindrop_project\demo_assets")
+ASSETS = RAINDROP_ROOT / "demo_assets"
 RESULTS = Path(__file__).parent / "eval_results" / "efficiency.json"
 PROC = psutil.Process()
 

@@ -35,9 +35,10 @@ from torchvision.transforms import functional as TF
 
 import derainnet
 import metrics
+from raindrop_paths import RAINDROP_ROOT
 from raindrop_render import RaindropRender
 
-ROOT = Path(r"C:\Users\sachd\Downloads\raindrop_project")
+ROOT = RAINDROP_ROOT
 KITTI = ROOT / "organized" / "KITTI_Clean" / "all" / "rgb"
 REAL_TRAIN = ROOT / "extracted" / "DeRaindrop" / "train"
 VRGS_TRAIN, VRGS_TEST = ROOT / "vrgs_train", ROOT / "vrgs_test"

@@ -1,13 +1,10 @@
 """
-RaindropEngine: swaps UnReflectAnything's specular-highlight synthesis
-(HighlightRender, which needs MoGe depth/normals) for the raindrop/streak/
-glare synthesis in raindrop_render.py (RaindropRender), reusing everything
-else in Engine unchanged -- loss computation, optimizer, checkpointing,
-logging, the token inpainter, decoders.
-
-Deliberately does NOT import anything from highlight_render.py: that module
-imports MoGeModel at module level, and one point of this class is to skip
-loading MoGe entirely for a raindrop-only run (see Engine._build_degradation_renderer).
+RaindropEngine: the training engine with VRGS (raindrop_render.py's
+RaindropRender) as its degradation renderer, in place of UnReflectAnything's
+specular-highlight synthesis. Everything else in Engine is reused unchanged:
+loss computation, optimizer, checkpointing, logging, the token inpainter and
+the decoders. VRGS is lens-relative, so unlike the original synthesis it needs
+no depth model (MoGe).
 """
 from __future__ import annotations
 

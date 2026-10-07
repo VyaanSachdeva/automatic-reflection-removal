@@ -17,7 +17,6 @@ import utilities.engine_initializers as initialize
 import wandb
 from logger import get_logger
 from losses import UnReflectLoss
-from highlight_render import HighlightRender
 from utilities.ablation import Ablation
 from utilities.model import pixel_mask_to_patch_mask
 from utilities import engine_helpers
@@ -679,12 +678,13 @@ class Engine:
         return False
 
     def _build_degradation_renderer(self) -> nn.Module:
-        """Constructs the module used by _synthesize_degradation. Default:
-        HighlightRender (loads MoGe for depth/normals). Overridden by
-        subclasses (e.g. a raindrop/glare variant) that need a different,
-        lighter-weight renderer instead -- extracted so that renderer isn't
-        constructed (and MoGe isn't loaded) at all in that case."""
-        return HighlightRender(height=self.height, width=self.width).to(self.device)
+        """Constructs the module used by _synthesize_degradation. Subclasses
+        provide it: RaindropEngine (raindrop_engine.py) returns VRGS's
+        RaindropRender. The original UnReflectAnything engine built its
+        specular-highlight renderer (highlight_render.py, MoGe-based) here;
+        that renderer isn't part of this project, so the base default and the
+        highlight branch of _synthesize_degradation below are no longer used."""
+        raise NotImplementedError("Use RaindropEngine (train_raindrop.py), which supplies the VRGS renderer.")
 
     def _synthesize_degradation(self, sample, is_training: bool, batch_idx: int) -> dict:
         """Synthesizes the training-time image degradation and the masks

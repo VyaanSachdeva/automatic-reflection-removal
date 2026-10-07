@@ -24,10 +24,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 
+from raindrop_paths import RAINDROP_ROOT
+
 ITERATION = 4
 WEIGHTS = Path(os.environ.get(
     "DERAINDROP_WEIGHTS",
-    r"C:\Users\sachd\Downloads\raindrop_project\derainnet_code\weights\gen.pkl",
+    RAINDROP_ROOT / "derainnet_code" / "weights" / "gen.pkl",
 ))
 
 
@@ -114,7 +116,7 @@ class Generator(nn.Module):
 
 FINETUNED = Path(os.environ.get(
     "DERAINDROP_VRGS_WEIGHTS",
-    r"C:\Users\sachd\Downloads\raindrop_project\checkpoints\deraindrop_vrgs.pkl",
+    RAINDROP_ROOT / "checkpoints" / "deraindrop_vrgs.pkl",
 ))
 _models: dict[Path, Generator] = {}
 

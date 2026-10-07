@@ -1,129 +1,177 @@
-# UnReflectAnything
+# Rain on Glass
 
-[![Project](https://img.shields.io/badge/Project-Webpage-ff611b?logo=googlehome&logoColor=ff611b)](https://alberto-rota.github.io/UnReflectAnything/)
-[![PyPI](https://img.shields.io/pypi/v/unreflectanything?color=76b1f3&label=pip%20install&logo=python&logoColor=76b1f3)](https://pypi.org/project/unreflectanything/)
-[![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=B31B1B)](https://arxiv.org/abs/2512.09583)
-[![Demo](https://img.shields.io/badge/Demo-HF%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/spaces/AlbeRota/UnReflectAnything-Demo)
-[![Modelcard](https://img.shields.io/badge/Model%20Card-HF%20-FFD21E?logo=huggingface&logoColor=FFD21E)](https://huggingface.co/AlbeRota/UnReflectAnything)
-[![Oral](https://img.shields.io/badge/Oral-Recording%20-ff0033?logo=youtube&logoColor=ff0033)](https://youtu.be/Uuy9arZwWaM?t=3655)
-[![Wiki](https://img.shields.io/badge/API-Wiki-9187FF?logo=wikipedia&logoColor=9187FF)](https://github.com/alberto-rota/UnReflectAnything/wiki)
-[![Colab](https://img.shields.io/badge/Examples-Colab-F9AB00?logo=googlecolab&logoColor=F9AB00)](https://colab.research.google.com/#fileId=https%3A//huggingface.co/AlbeRota/UnReflectAnything/blob/main/notebooks/UnReflectAnything.ipynb)
-[![Licence](https://img.shields.io/badge/MIT-License-1E811F)](https://mit-license.org/)
-### RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision
-UnReflectAnything inputs any RGB image and removes specular highlights, returning a clean diffuse-only output. We trained UnReflectAnything by synthetizing specularities and supervising in DINOv3 feature space.
+**Removing raindrops, streaks and glare from dashcam and CCTV footage.**
 
-UnReflectAnything works on both natural indoor and surgical/endoscopic domain data. 
+When it rains, water sits on the camera's own glass: the windshield in front of a dashcam, or the dome or housing
+of a CCTV camera. Droplets refract and blur the scene behind them, sliding drops leave streaks, and headlights and
+streetlights flare through the wet glass. This project restores a single rainy frame.
 
----
-![examples](https://raw.githubusercontent.com/alberto-rota/UnReflectAnything/refs/heads/main/assets/header.png)
+This is different from removing *falling* rain (the "rain streak removal" problem). Here the water is on the lens: it
+is close to the camera, out of focus, and stays put while the scene moves.
 
-> [!IMPORTANT]
-> The maintainers are still working on an official API and Weights release for UnReflectAnything. In v1.0.2 the model is available from the API with `pretrained=False` by deafault, and forecefully setting it `True` will display a warning and weights will not be downloaded. Stay tuned for the official release!
+## Approach
 
-## Installation
-```bash
-pip install unreflectanything
-```
-Install UnReflectAnything as a Python Package. 
+Real pairs of rainy and clean footage from the same camera barely exist, so the model learns from synthetic rain.
 
-The minimum required Python version is 3.11, but development and all experiments have been based on **Python 3.12**.
+1. **VRGS (Virtual Raindrop-Glare Synthesis)** renders rain on glass onto ordinary clean driving footage (KITTI):
+   - **Droplets:** a lens-like refraction warp, realistic sizes, defocus blur, a darker core and a bright rim.
+   - **Streaks:** trails sharing one wind direction per frame, angled for a moving dashcam and straight down for a
+     static CCTV camera.
+   - **Glare:** real light-streak shapes from Flare7K, placed where the scene already has bright lights.
+   - **Haze:** a thin wet-glass veil over the whole frame.
 
-For GPU support, make sure PyTorch comes with CUDA version for your system (see [PyTorch Get Started](https://pytorch.org/get-started/locally/)).
+   Every rendered frame comes with an exact mask of the pixels it changed, which is the detector's training target.
+   VRGS is a procedural renderer with no learned weights ([raindrop_render.py](raindrop_render.py)).
 
+2. **The restoration model** adapts the architecture of UnReflectAnything (Rota et al., CVPR 2026), a
+   specular-highlight remover that also learns from synthetic data:
 
-## Setting up
-After pip-installing, you can use the `unreflectanything` CLI command, which is also aliased to `unreflect` and `ura`. The three commands are equivalent.
-
-With the CLI you can already download the model weights with
-```bash
-unreflectanything download --weights
-```
-and some sample images with 
-```bash
-unreflectanything download --images
-```
-
-Weights are stored by default in `~/.cache/unreflectanything/weights` (or `$XDG_CACHE_HOME/unreflectanything/weights` if set ; `%LOCALAPPDATA%\unreflectanything` for Windows). Use `--output-dir` to choose another location. 
-
-Both the weights and images are stored on the [HuggingFace Model Repo](https://huggingface.co/spaces/AlbeRota/UnReflectAnything-Demo).
-
-## Enable shell completion
-Shell completion is available for the `bash` and `zsh` shells. Run
-```bash
-unreflectanything completion bash
-```
-and execute the `echo ...` command that gets printed.
-
-
-## Command Line Interface
-Get an overview of the available CLI endpoints with 
-```
-unreflectanything --help   # alias 'unreflect --help' alias 'ura --help'
-```
-Refer to the [Wiki](https://github.com/alberto-rota/UnReflectAnything/wiki) to get detailed documentation about each endpoint. We report a summary of the available subcommands. Remember that `ura` is aliased to the `unreflectanything` command
-
-| Subcommand | Description | Command |
-|------------|-------------|-------------|
-| `inference` | Run inference on image(s) to remove reflections | `ura inference /path/to/images -o /path/to/output` |
-| `download` | Download checkpoint weights, sample images, notebooks, configs | `ura download --weights` |
-| `cache` | Print cache directory or clear cached assets | `ura cache --dir` or `ura cache --clear` |
-| `verify` | Verify weights installation and compatibility, or dataset directory structure | `ura verify --weights` or `ura verify --dataset --path /path/to/dataset` |
-| `cite` | Print citation (BibTeX, APA, MLA, IEEE, plain) | `ura cite --bibtex` |
-| `completion` | Print or install shell completion (bash/zsh) | `ura completion bash` |
-
-Training, testing, and evaluation are available via the [Python API](https://github.com/alberto-rota/UnReflectAnything/wiki); see the [Wiki](https://github.com/alberto-rota/UnReflectAnything/wiki) for details.
-
-## Python API
-
-The same endpoints above are exposed as a Python API. Refer to the [Wiki](https://github.com/alberto-rota/UnReflectAnything/wiki) to get detailed documentation about each endpoint. A few examples are reported below
-
-```python
-import unreflectanything as unreflect
-import torch
-
-# Get the model class (e.g. for custom setup or training)
-ModelClass = unreflect.model()
-
-# Get a pretrained model (torch.nn.Module) and run on batched RGB
-unreflectmodel = unreflect.model(pretrained=True)  # uses cached weights; run 'unreflect download --weights' first
-images = torch.rand(2, 3, 448, 448, device="cuda")  # [B, 3, H, W], values in [0, 1]
-model_out = unreflectmodel(images)  # [B, 3, H, W] diffuse tensor
-
-# File-based or tensor-based inference (one-shot, no model handle)
-unreflect.inference("input.png", output="output.png")
-unreflect.inference(images, output="output.png")
-result = unreflect.inference(images)
-
-# Cache directory (where weights, images, etc. are stored)
-weights_dir = unreflect.cache("weights")
-```
-
-## Contributing & Development
-If you want to contribute or develop UnReflectAnything:
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/alberto-rota/UnReflectAnything.git
-   cd UnReflectAnything
    ```
-2. Install dependencies (we recommend a virtual environment with Python 3.12):
-   ```bash
-   pip install -r requirements.txt
+   rainy frame → raindrop detector → DINOv3-L encoder (frozen) → choose patches
+               → repair them in feature space → DPT decoder → restored frame
    ```
 
-## Citation
-If you include UnReflectAnything in your pipeline or research work, we encourage you cite our work. 
-Get the citation entry with 
-```bash
-unreflectanything cite --bibtex
+   Pixels outside the repaired patches are kept from the original frame.
+
+## Status
+
+The synthesis, data pipeline, training engine and a live demo are built. The full training run at 896 px needs a
+GPU, so the current model still uses pretrained parts:
+
+| Stage | Currently | After VRGS training |
+|---|---|---|
+| Raindrop detector | DeRaindrop's attention network (Qian et al., CVPR 2018) | Trained on VRGS masks |
+| Encoder | DINOv3 ViT-L/16, frozen | Unchanged |
+| Repair step | **Neighbour fill**: rebuilds each patch from the clean patches around it, with no learned weights | Inpainter trained on VRGS pairs |
+| Decoder | UnReflectAnything's released DPT decoder | Fine-tuned on VRGS pairs |
+
+**Why neighbour fill:** UnReflectAnything's released token inpainter was trained with an inverted mask. At each hole
+it receives that hole's own features and learned to correct a highlight in place, so on a raindrop it keeps the drop
+and darkens it. Neighbour fill discards the drop's features and is about 9× faster.
+
+### Results so far
+
+8 real rainy photos from the DeRaindrop test set, scored against their clean versions (higher is better):
+
+| Method | PSNR (dB) | SSIM | Better than the untouched photo |
+|---|---|---|---|
+| Rainy input, left alone | 25.08 | 0.863 | – |
+| UnReflectAnything, stock | 23.58 | 0.786 | 0 / 8 |
+| + raindrop detector, released inpainter | 22.86 | 0.819 | 0 / 8 |
+| + raindrop detector, neighbour fill (current) | 23.38 | 0.817 | 0 / 8 |
+| DeRaindrop | 31.32 | 0.922 | 7 / 8 |
+
+DeRaindrop wins on these photos, but they come from its own test set (the glass pane and camera it was trained on).
+On VRGS dashcam/CCTV rain it beats the untouched frame on **0 of 8** frames: it leaves the streaks and glare in
+place. Fine-tuning it on VRGS for 20 minutes on a CPU lifts held-out VRGS frames from 21.69 to 22.13 dB
+(SSIM 0.907 → 0.912) while keeping its real-photo score (see
+[eval_results/deraindrop_vrgs_finetune.json](eval_results/deraindrop_vrgs_finetune.json)).
+
+### Efficiency
+
+Measured on an Intel Core i7-1065G7 laptop CPU, batch size 1
+([benchmark_efficiency.py](benchmark_efficiency.py), [eval_results/efficiency.json](eval_results/efficiency.json)):
+
+| | Parameters | FLOPs / image | Latency | Throughput |
+|---|---|---|---|---|
+| Stock UnReflectAnything | 498 M | ≈5.5 T | 78.7 s | 0.76 img/min |
+| Current pipeline | 408 M | ≈4.2 T | 52.9 s | 1.13 img/min |
+| DeRaindrop | 6.2 M | 0.81 T | 10.8 s | 5.5 img/min |
+| VRGS renderer (per 960×290 frame) | none | – | 6.6 s | 9.1 frames/min |
+
+Peak memory is 5.5 GB. The frozen DINOv3 encoder accounts for 61% of the pipeline's latency.
+
+## Getting started
+
+### 1. Install
+
+Windows with Python 3.12:
+
+```bat
+git clone https://github.com/VyaanSachdeva/rain-on-glass.git
+cd rain-on-glass
+py -3.12 -m venv .venv
+.venv\Scripts\activate
+rem PyTorch first (pick one):
+pip install torch==2.9.1 torchvision==0.24.1
+pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
 ```
-or copy it directly from below
+
+The pretrained UnReflectAnything weights (3.4 GB) download automatically on first use.
+
+### 2. Data
+
+All data lives in a `raindrop_project` folder **next to** this repo. Set `RAINDROP_ROOT` to put it elsewhere.
+
 ```
-@InProceedings{Rota_2026_CVPR,
-    author    = {Rota, Alberto and Kiray, Mert and Karaoglu, Mert Asim and Ruhkamp, Patrick and De Momi, Elena and Navab, Nassir and Busam, Benjamin},
-    title     = {UnReflectAnything: RGB-Only Highlight Removal by Rendering Synthetic Specular Supervision},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2026},
-    pages     = {241-250}
-}
+raindrop_project/
+  extracted/
+    kitti_2011_09_26_drive_0001/   KITTI raw, drive 0001 (clean driving frames)
+    DeRaindrop/{train,test_a,test_b}/{data,gt}   real rain/clean pairs
+    Flare7K/Flare7Kpp/             Flare7K++ (glare assets)
+  organized/KITTI_Clean/all/rgb/   KITTI frames from image_02/data, used for training
+  derainnet_code/                  git clone of https://github.com/rui1996/DeRaindrop (weights/gen.pkl)
+  checkpoints/                     fine-tuned weights written by finetune_deraindrop.py
+  demo_assets/                     demo examples and precomputed outputs
 ```
+
+| Dataset | Source | License |
+|---|---|---|
+| KITTI raw | [cvlibs.net/datasets/kitti/raw_data.php](https://www.cvlibs.net/datasets/kitti/raw_data.php) | CC BY-NC-SA 3.0 |
+| DeRaindrop | [github.com/rui1996/DeRaindrop](https://github.com/rui1996/DeRaindrop) | See the repository |
+| Flare7K++ | [github.com/ykdai/Flare7K](https://github.com/ykdai/Flare7K) | S-Lab License 1.0 (non-commercial) |
+
+For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file in the repo folder.
+
+### 3. Run
+
+| What | Command |
+|---|---|
+| Live demo (add rain, watch each model stage, compare baselines) | `run_demo.bat`, or `python demo_app.py`, then open http://127.0.0.1:7860 |
+| Preview VRGS on KITTI frames | `python raindrop_render.py` |
+| Fine-tune DeRaindrop on VRGS | `python finetune_deraindrop.py --minutes 20` |
+| Measure efficiency | `python benchmark_efficiency.py` |
+| Training smoke test (CPU, 224 px) | `python train_raindrop.py --config config/raindrop_smoke_test.yaml` |
+
+`config/train.yaml` holds the original paper's full-scale settings (896 px, batch size and schedule). It is the
+reference for the full GPU training config.
+
+## Repository layout
+
+| File | Role |
+|---|---|
+| [raindrop_render.py](raindrop_render.py) | VRGS: the rain-on-glass renderer |
+| [raindrop_engine.py](raindrop_engine.py), [train_raindrop.py](train_raindrop.py) | Training with VRGS as the degradation |
+| [model_stages.py](model_stages.py) | Runs the model one stage at a time; neighbour fill |
+| [derainnet.py](derainnet.py) | DeRaindrop's generator, ported to current PyTorch on CPU |
+| [finetune_deraindrop.py](finetune_deraindrop.py) | Fine-tunes DeRaindrop on VRGS + real pairs |
+| [demo_app.py](demo_app.py), [run_demo.bat](run_demo.bat) | Gradio demo |
+| [benchmark_efficiency.py](benchmark_efficiency.py) | Parameters, FLOPs, latency, memory |
+| [raindrop_paths.py](raindrop_paths.py) | Where the data folder is |
+| `engine.py`, `main.py`, `models.py`, `token_inpainters.py`, `losses.py`, `dataset/`, `utilities/` | Training framework from UnReflectAnything, adapted |
+
+## Roadmap
+
+- [x] VRGS renderer (droplets, streaks, glare, haze, exact masks)
+- [x] Data pipeline (KITTI, DeRaindrop, Flare7K++) and training engine (CPU smoke test)
+- [x] Baselines, diagnosis of the released inpainter, neighbour fill
+- [x] First VRGS fine-tune (DeRaindrop)
+- [ ] Faster, vectorised VRGS for large-scale data generation
+- [ ] Full VRGS training of the detector and inpainter at 896 px on a GPU
+- [ ] Evaluation on the full DeRaindrop test sets and a CCTV source
+- [ ] Video: use neighbouring frames, since drops stay put while the scene moves
+
+## Credits
+
+- The model architecture and training framework are adapted from **UnReflectAnything**: A. Rota, M. Kiray,
+  M. A. Karaoglu, P. Ruhkamp, E. De Momi, N. Navab, B. Busam, *UnReflectAnything: RGB-Only Highlight Removal by
+  Rendering Synthetic Specular Supervision*, CVPR 2026. MIT License, see [LICENSE](LICENSE).
+- **DINOv3** (Meta) is used under the DINOv3 License, see [LICENSE_DINO.txt](LICENSE_DINO.txt).
+- **DeRaindrop**: R. Qian, R. T. Tan, W. Yang, J. Su, J. Liu, *Attentive Generative Adversarial Network for
+  Raindrop Removal from a Single Image*, CVPR 2018.
+- Droplet optics follow M. Roser and A. Geiger, *Video-based Raindrop Detection for Improved Image Registration*,
+  ICCV Workshops 2009.
+- Glare assets: Y. Dai et al., *Flare7K*, NeurIPS 2022.
+
+**Author:** Vyaan Sachdeva

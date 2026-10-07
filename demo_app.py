@@ -41,9 +41,10 @@ sys.path.insert(0, str(REPO))
 import derainnet  # noqa: E402
 import metrics  # noqa: E402
 import model_stages  # noqa: E402
+from raindrop_paths import RAINDROP_ROOT  # noqa: E402
 from raindrop_render import RaindropRender  # noqa: E402
 
-ASSETS = Path(os.environ.get("DEMO_ASSETS", r"C:\Users\sachd\Downloads\raindrop_project\demo_assets"))
+ASSETS = Path(os.environ.get("DEMO_ASSETS", RAINDROP_ROOT / "demo_assets"))
 URA = REPO / ".venv" / "Scripts" / "ura.exe"
 MAX_SIDE = 960
 
