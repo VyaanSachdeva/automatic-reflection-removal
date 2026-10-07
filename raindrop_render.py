@@ -176,12 +176,27 @@ class RaindropRender(nn.Module):
         r = int(random.lognormvariate(mu, sigma))
         return max(min_r, min(max_r, r))
 
-    def _apply_one_droplet(self, img: torch.Tensor, cx: float, cy: float, radius: float, device) -> tuple[torch.Tensor, torch.Tensor]:
-        """img: [3,H,W]. Returns (updated_img, soft_mask [H,W])."""
+    def _apply_one_droplet(self, img: torch.Tensor, cx: int, cy: int, radius: int, device) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
+        """img: [3,H,W], updated in place. Returns (soft_mask [h,w], box (y0, y1, x0, x1))
+        where the mask covers img[:, y0:y1, x0:x1].
+
+        Works on a crop around the droplet rather than the full frame: the warp
+        reads at most fov_factor * radius px from the centre, and the blend mask
+        is zero beyond `radius`, so nothing outside the crop can change. Cost
+        scales with the droplet's area instead of the image's, which is what
+        made the full-frame version slow (~200 full-frame passes per image)."""
         H, W = img.shape[-2:]
-        cx_t, cy_t, r_t = torch.tensor(cx, device=device), torch.tensor(cy, device=device), torch.tensor(radius, device=device)
-        grid = self._droplet_grid(cx_t, cy_t, r_t, H, W).unsqueeze(0)  # [1,H,W,2]
-        warped = F.grid_sample(img.unsqueeze(0), grid, align_corners=True, mode="bilinear")[0]  # [3,H,W]
+        reach = int(math.ceil(radius * 3.0)) + 2  # fov_factor in _droplet_grid, plus a bilinear margin
+        y0, y1 = max(0, cy - reach), min(H, cy + reach + 1)
+        x0, x1 = max(0, cx - reach), min(W, cx + reach + 1)
+        crop = img[:, y0:y1, x0:x1]
+        h, w = crop.shape[-2:]
+        cx_t = torch.tensor(float(cx - x0), device=device)
+        cy_t = torch.tensor(float(cy - y0), device=device)
+        r_t = torch.tensor(float(radius), device=device)
+        H, W = h, w  # everything below is in crop coordinates
+        grid = self._droplet_grid(cx_t, cy_t, r_t, H, W).unsqueeze(0)  # [1,h,w,2]
+        warped = F.grid_sample(crop.unsqueeze(0), grid, align_corners=True, mode="bilinear")[0]  # [3,h,w]
         blur_factor = max(1, int(radius * 0.12))
         warped = self._box_blur(warped, blur_factor)
         # Core darkening: water absorbs/scatters some light, so the droplet
@@ -199,8 +214,8 @@ class RaindropRender(nn.Module):
         warped = warped + self._rim_highlight(cx_t, cy_t, r_t, H, W, device).unsqueeze(0)
         warped = warped.clamp(0, 1)
         mask = self._feathered_circle_mask(cx_t, cy_t, r_t, H, W)
-        out = img * (1 - mask) + warped * mask
-        return out, mask
+        img[:, y0:y1, x0:x1] = crop * (1 - mask) + warped * mask
+        return mask, (y0, y1, x0, x1)
 
     def forward(
         self,
@@ -232,8 +247,8 @@ class RaindropRender(nn.Module):
                 radius = self._sample_lognormal_radius(max(min_r, 1), max(max_r, min_r + 1))
                 cx = random.randint(radius, W - radius - 1)
                 cy = random.randint(radius, H - radius - 1)
-                img, drop_mask = self._apply_one_droplet(img, cx, cy, radius, device)
-                mask_accum[b] = torch.clamp(mask_accum[b] + drop_mask, 0, 1)
+                drop_mask, (y0, y1, x0, x1) = self._apply_one_droplet(img, cx, cy, radius, device)
+                mask_accum[b, y0:y1, x0:x1] = torch.clamp(mask_accum[b, y0:y1, x0:x1] + drop_mask, 0, 1)
 
                 if random.random() < 0.7 * rain_intensity + 0.35:
                     angle = math.radians(base_angle + random.uniform(-12, 12))
@@ -248,8 +263,8 @@ class RaindropRender(nn.Module):
                         sy = int(cy + math.sin(angle) * length * t)
                         if not (r2 <= sx < W - r2 and r2 <= sy < H - r2):
                             break
-                        img, streak_mask = self._apply_one_droplet(img, sx, sy, r2, device)
-                        mask_accum[b] = torch.clamp(mask_accum[b] + streak_mask * (1 - 0.7 * t), 0, 1)
+                        streak_mask, (y0, y1, x0, x1) = self._apply_one_droplet(img, sx, sy, r2, device)
+                        mask_accum[b, y0:y1, x0:x1] = torch.clamp(mask_accum[b, y0:y1, x0:x1] + streak_mask * (1 - 0.7 * t), 0, 1)
 
             # Bias glare placement toward pixels already bright in the clean
             # frame -- glare/bloom happens where a real light source sits in
