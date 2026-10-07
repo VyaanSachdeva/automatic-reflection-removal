@@ -1,15 +1,47 @@
 {
-  "run": "CPU, 20 min, 127 steps of batch 2 (256px crops, half VRGS / half real DeRaindrop pairs), lr 2e-5",
   "vrgs_heldout": {
-    "images": 10,
-    "rainy input": {"psnr": 21.3, "ssim": 0.93},
-    "DeRaindrop (released)": {"psnr": 21.69, "ssim": 0.907, "beats_input": 0},
-    "DeRaindrop + VRGS fine-tune": {"psnr": 22.13, "ssim": 0.912, "beats_input": 1}
+    "images": 18,
+    "rainy input": {
+      "psnr": 25.41,
+      "ssim": 0.928
+    },
+    "DeRaindrop (released)": {
+      "psnr": 25.78,
+      "ssim": 0.898,
+      "beats_input": 0
+    },
+    "DeRaindrop + VRGS fine-tune (previous: CPU, 20 min)": {
+      "psnr": 25.46,
+      "ssim": 0.901,
+      "beats_input": 0
+    },
+    "DeRaindrop + VRGS fine-tune": {
+      "psnr": 26.29,
+      "ssim": 0.923,
+      "beats_input": 7
+    }
   },
   "real_test_a": {
-    "images": 20,
-    "rainy input": {"psnr": 23.33, "ssim": 0.832},
-    "DeRaindrop (released)": {"psnr": 30.83, "ssim": 0.909, "beats_input": 20},
-    "DeRaindrop + VRGS fine-tune": {"psnr": 30.54, "ssim": 0.909, "beats_input": 20}
-  }
+    "images": 58,
+    "rainy input": {
+      "psnr": 23.81,
+      "ssim": 0.847
+    },
+    "DeRaindrop (released)": {
+      "psnr": 30.93,
+      "ssim": 0.911,
+      "beats_input": 57
+    },
+    "DeRaindrop + VRGS fine-tune (previous: CPU, 20 min)": {
+      "psnr": 30.66,
+      "ssim": 0.912,
+      "beats_input": 58
+    },
+    "DeRaindrop + VRGS fine-tune": {
+      "psnr": 30.11,
+      "ssim": 0.912,
+      "beats_input": 58
+    }
+  },
+  "run": "CUDA, 30 min, 4252 steps of batch 4 (256px crops, 50% VRGS / 50% real DeRaindrop pairs), lr 3e-05; VRGS on 185 KITTI frames x 4, tested on held-out drive drive_0113"
 }
