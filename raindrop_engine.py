@@ -13,13 +13,28 @@ import random
 import torch
 
 from engine import Engine
+from raindrop_paths import RAINDROP_ROOT
 from raindrop_render import RaindropRender
 from utilities.model import pixel_mask_to_patch_mask
 
 
 class RaindropEngine(Engine):
+    _vrgs_cache = None
+
     def _build_degradation_renderer(self) -> torch.nn.Module:
         return RaindropRender(height=self.height, width=self.width).to(self.device)
+
+    def _cached_batch(self, sample, batch_size: int):
+        """A training batch drawn from prerender_vrgs.py's cache (config VRGS_CACHE),
+        so the step doesn't wait on the renderer. Replaces sample["diffuse"] with the
+        cached clean frames, which the engine reads later as the target."""
+        if self._vrgs_cache is None:
+            self._vrgs_cache = torch.load(RAINDROP_ROOT / self.config["VRGS_CACHE"], map_location="cpu")
+        c = self._vrgs_cache
+        idx = torch.randint(len(c["clean"]), (batch_size,))
+        to01 = lambda t: t[idx].to(self.device, non_blocking=True).float() / 255  # noqa: E731
+        sample["diffuse"] = to01(c["clean"])
+        return {"degraded": to01(c["rainy"]), "mask": to01(c["mask"])}
 
     def _synthesize_degradation(self, sample, is_training: bool, batch_idx: int) -> dict:
         rgb = sample["diffuse"].to(self.device, non_blocking=True)
@@ -45,7 +60,10 @@ class RaindropEngine(Engine):
             rain_intensity = float(intensity_cfg)
 
         capture_context = self.config.get("CAPTURE_CONTEXT", "dashcam")
-        result = self.add_highlights(rgb, rain_intensity=rain_intensity, capture_context=capture_context)
+        if is_training and self.config.get("VRGS_CACHE"):
+            result = self._cached_batch(sample, rgb.shape[0])
+        else:
+            result = self.add_highlights(rgb, rain_intensity=rain_intensity, capture_context=capture_context)
 
         if freeze_val:
             torch.set_rng_state(_cpu_rng_state)

@@ -77,9 +77,20 @@ is the next lever. LaMa takes about 0.3 s per photo on the GPU.
 
 DeRaindrop wins on these photos, but they come from its own test set (the glass pane and camera it was trained on).
 On VRGS dashcam/CCTV rain it beats the untouched frame on **0 of 8** frames: it leaves the streaks and glare in
-place. Fine-tuning it on VRGS for 20 minutes on a CPU lifts held-out VRGS frames from 21.69 to 22.13 dB
-(SSIM 0.907 → 0.912) while keeping its real-photo score (see
-[eval_results/deraindrop_vrgs_finetune.json](eval_results/deraindrop_vrgs_finetune.json)).
+place. Fine-tuning it for 30 minutes on the GPU (4,252 steps; current VRGS on three KITTI drives, half real
+DeRaindrop pairs) makes it the first version that helps on dashcam/CCTV rain
+([eval_results/deraindrop_vrgs_finetune.json](eval_results/deraindrop_vrgs_finetune.json)):
+
+| | VRGS rain, unseen KITTI drive (18 frames) | Real photos, DeRaindrop test_a (58) |
+|---|---|---|
+| Rainy input | 25.41 dB / 0.928 | 23.81 dB / 0.847 |
+| DeRaindrop, released | 25.78 / 0.898, beats input on 0 / 18 | **30.93** / 0.911, 57 / 58 |
+| Fine-tuned (earlier: CPU, 20 min, old VRGS) | 25.46 / 0.901, 0 / 18 | 30.66 / 0.912, 58 / 58 |
+| **Fine-tuned (GPU, 30 min)** | **26.29 / 0.923, 7 / 18** | 30.11 / **0.912**, **58 / 58** |
+
+It now removes some streaks and glare, but it costs 0.8 dB PSNR on the real photos (SSIM unchanged), and it still
+trails the untouched VRGS frame on average SSIM. A lower learning rate or more real pairs in the mix should close
+the real-photo gap.
 
 ### Efficiency
 
@@ -150,7 +161,11 @@ For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file
 |---|---|
 | Live demo (add rain, watch each model stage, compare baselines) | `run_demo.bat`, or `python demo_app.py`, then open http://127.0.0.1:7860 |
 | Preview VRGS on KITTI frames | `python raindrop_render.py` |
-| Fine-tune DeRaindrop on VRGS | `python finetune_deraindrop.py --minutes 20` |
+| Fine-tune DeRaindrop on VRGS (GPU; batch 4 fits 8 GB) | `python finetune_deraindrop.py --minutes 30 --batch 4 --workers 4` |
+| Download more KITTI drives (left camera only) | `python download_kitti.py 0002 0020 0079 0113` |
+| Pre-render the cached VRGS training set | `python prerender_vrgs.py --size 448 --variants 4` |
+| Train the raindrop detector + inpainter (GPU) | `python train_raindrop.py --config config/raindrop_train.yaml` |
+| Score every method on the same test sets | `python eval_all.py` |
 | Measure efficiency | `python benchmark_efficiency.py` |
 | Training smoke test (224 px, 8 images; ~1 min on a GPU) | `python train_raindrop.py --config config/raindrop_smoke_test.yaml` |
 

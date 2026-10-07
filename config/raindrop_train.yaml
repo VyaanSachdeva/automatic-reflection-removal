@@ -1,0 +1,234 @@
+﻿### RAINDROP TRAINING (GPU, 8 GB): trains the raindrop detector and the token
+### inpainter on VRGS-rendered KITTI frames. Run with train_raindrop.py.
+###
+### Sized for an 8 GB laptop GPU and a short run: 448 px instead of the paper's
+### 896 (inference alone peaks at 5.4 GB at 896 px), frozen DINOv3-L encoder,
+### frozen image decoder. Both decoders start from the released
+### UnReflectAnything weights, split out of full_model_weights.pt into
+### $WEIGHTS_DIR/{diffuse,highlight}_decoder.pt. The token inpainter starts from
+### scratch and is fed the mask the documented way round (True = hole), via
+### INPAINT_FEED_RAW_MASK: the released inpainter was trained with it inverted
+### (see HANDOFF.md), which is why its weights are not reused.
+###
+### Scenes: drive 0001 ("all") and drives 0002 / 0020 / 0079 for training; drive
+### 0113 is never trained on and is used for validation.
+
+parameters:
+
+  MODEL:
+    value:
+      MODEL_CLASS: "UnReflect_Model_TokenInpainter"
+      MODEL_MODULE: "models"
+      RGB_ENCODER:
+        ENCODER: "AlbeRota/DINOv3_mirror"
+        IMAGE_SIZE: 448
+        RETURN_SELECTED_LAYERS: [3, 6, 9, 12]
+        RGB_ENCODER_LR: 0.0
+      DECODERS:
+        diffuse:
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [768,1024,1536,2048]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          FROM_PRETRAINED: "diffuse_decoder.pt"
+          USE_BN: False
+          DROPOUT: 0.1
+          OUTPUT_IMAGE_SIZE: [448,448]
+          OUTPUT_CHANNELS: 3
+          DECODER_LR: 0.0
+          NUM_FUSION_BLOCKS_TRAINABLE: 0
+          TRAIN_RGB_HEAD: False
+        highlight:
+          # The raindrop/streak/glare detector: same architecture as the
+          # specular-highlight detector, started from its weights and
+          # retrained on VRGS masks.
+          FEATURE_DIM: 1024
+          REASSEMBLE_OUT_CHANNELS: [96,192,384,768]
+          REASSEMBLE_FACTORS: [4.0, 2.0, 1.0, 0.5]
+          READOUT_TYPE: "ignore"
+          FROM_PRETRAINED: "highlight_decoder.pt"
+          USE_BN: False
+          DROPOUT: 0.1
+          OUTPUT_IMAGE_SIZE: [448,448]
+          OUTPUT_CHANNELS: 1
+          DECODER_LR: 3.0e-4
+          NUM_FUSION_BLOCKS_TRAINABLE: null
+      TOKEN_INPAINTER:
+        TOKEN_INPAINTER_CLASS: "TokenInpainter_Prior"
+        TOKEN_INPAINTER_MODULE: "token_inpainters"
+        TOKEN_INPAINTER_LR: 2.0e-4
+        DEPTH: 6
+        HEADS: 16
+        DROP: 0.05
+        USE_POSITIONAL_ENCODING: True
+        USE_FINAL_NORM: True
+        USE_LOCAL_PRIOR: True
+        LOCAL_PRIOR_WEIGHT: 0.5
+        LOCAL_PRIOR_KERNEL: 5
+        SEED_NOISE_STD: 0.02
+  INPAINT_FEED_RAW_MASK:
+    value: True  # True = hole, the documented convention; see the header
+  INPAINT_MASK_DILATION:
+    value: 3
+  INPAINT_MASK_THRESHOLD:
+    value: 0.2
+  USE_TORCH_COMPILE:
+    value: False
+  DISTRIBUTE:
+    value: "singlegpu"
+
+  DATASETS:
+    value:
+      KITTI_CLEAN:
+        TRAIN_SCENES: ["all", "drive_0002", "drive_0020", "drive_0079"]
+        VAL_SCENES: ["drive_0113"]
+        TARGET_SIZE: [448,448]
+        RESIZE_MODE: "resize+crop"
+        SAMPLE_EVERY_N: 1
+        LOAD_RGB_ONLY: True
+        FEW_IMAGES: False
+  FEW_IMAGES_ALL_DATASETS:
+    value: False
+
+  BATCH_SIZE:
+    value: 2  # batch 4 spills out of 8 GB VRAM into system RAM on Windows and crawls
+  NUM_WORKERS:
+    value: 0  # Windows can't pickle the dataset (an lru_cache) into worker processes; training batches come from VRGS_CACHE anyway
+  SHUFFLE:
+    value: True
+  PIN_MEMORY:
+    value: False
+  PREFETCH_FACTOR:
+    value: null
+
+  ### RAINDROP SYNTHESIS (RaindropRender params -- see raindrop_render.py)
+  VRGS_CACHE:
+    value: "vrgs_cache_448.pt"  # in raindrop_project/, from prerender_vrgs.py; training draws from it, validation renders live
+  RAIN_INTENSITY:
+    value: [0.2, 1.0]  # sampled per image
+  CAPTURE_CONTEXT:
+    value: "dashcam"
+  FREEZE_VAL_RAIN:
+    value: True  # the same rain on every validation pass, so epochs are comparable
+  VAL_RAIN_INTENSITY:
+    value: 0.6
+  CLAMP_RECONSTRUCTION:
+    value: True
+
+  ### OPTIMIZATION -- a short run; EPOCHS is set from the measured step time
+  LEARNING_RATE:
+    value: 1.0e-3
+  WEIGHT_DECAY:
+    value: 0.0
+  EPOCHS:
+    value: 12
+  GRADIENT_ACCUMULATION_STEPS:
+    value: 1
+  WARMUP:
+    value: 50
+  GRADIENT_CLIPPING_MAX_NORM:
+    value: 8
+  LR_SCHEDULER:
+    value:
+      ONPLATEAU:
+        PATIENCE: 3
+        FACTOR: 0.3
+      STEPWISE:  # the engine expects OnPlateau plus exactly one other scheduler
+        N_STEPS: 3
+        GAMMA: 0.5
+  SWITCH_OPTIMIZER_EPOCH:
+    value: null
+  OPTIMIZER_BOOTSTRAP_NAME:
+    value: "AdamW"
+  OPTIMIZER_REFINING_NAME:
+    value: "AdamW"
+  EARLY_STOPPING_PATIENCE:
+    value: 6
+  SAVE_INTERVAL:
+    value: 200
+
+  DATASET_HIGHLIGHT_SUPERVISION_THRESHOLD:
+    value: 0.1
+
+  ### LOSS WEIGHTS (as in raindrop_smoke_test.yaml / train.yaml)
+  SPECULAR_LOSS_WEIGHT:
+    value: 0.0
+  DIFFUSE_LOSS_WEIGHT:
+    value: 0.0
+  HIGHLIGHT_LOSS_WEIGHT:
+    value: 1.0
+  TOKEN_INPAINT_LOSS_WEIGHT:
+    value: 1.0
+  IMAGE_RECONSTRUCTION_LOSS_WEIGHT:
+    value: 0.0
+  SATURATION_RING_LOSS_WEIGHT:
+    value: 0.0
+  WEIGHT_CONTEXT_IDENTITY:
+    value: 0.0
+  WEIGHT_TV_IN_HOLE:
+    value: 0.0
+  RING_KERNEL_SIZE:
+    value: 11
+  RING_VAR_WEIGHT:
+    value: 0.5
+  RING_TEXTURE_WEIGHT:
+    value: 1.0
+  HLREG_W_L1:
+    value: 1.0
+  HLREG_USE_CHARB:
+    value: True
+  HLREG_W_DICE:
+    value: 0.2
+  HLREG_W_SSIM:
+    value: 0.0
+  HLREG_W_GRAD:
+    value: 0.0
+  HLREG_W_TV:
+    value: 0.0
+  HLREG_BALANCE_MODE:
+    value: "auto"
+  HLREG_POS_WEIGHT:
+    value: 1.0
+  HLREG_FOCAL_GAMMA:
+    value: 2.0
+  RING_DILATE_KERNEL:
+    value: 17
+  WEIGHT_SEAM:
+    value: 0.5
+  SEAM_USE_CHARB:
+    value: True
+  SEAM_WEIGHT_GRAD:
+    value: 0.0
+  TOKEN_FEAT_ALPHA:
+    value: 0.5
+
+  WEIGHT_DIFFUSE_HIGHLIGHT_PENALTY:
+    value: 0.0  # the image decoder is frozen, so this would have nothing to train
+  DIFFUSE_HL_THRESHOLD:
+    value: 0.85
+  DIFFUSE_HL_USE_CHARB:
+    value: True
+  DIFFUSE_HL_PENALTY_MODE:
+    value: "brightness"
+  DIFFUSE_HL_TARGET_BRIGHTNESS:
+    value: null
+  DIFFUSE_HL_USE_LUMINANCE:
+    value: False
+
+  ### LOGGING -- local only
+  LOG_INTERVAL:
+    value: 20
+  WANDB_LOG_INTERVAL:
+    value: 20
+  IMAGE_LOG_INTERVAL:
+    value: 200
+  NO_WANDB:
+    value: True
+  MODEL_WATCHER_FREQ_WANDB:
+    value: 50
+  WANDB_ENTITY:
+    value: "unreflect-anything"
+  WANDB_PROJECT:
+    value: "UnReflectAnything"
+  NOTES:
+    value: "Raindrop detector + token inpainter on VRGS, 448 px, RTX 4060 8 GB"
