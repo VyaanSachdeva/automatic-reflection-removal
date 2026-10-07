@@ -101,12 +101,14 @@ OPTIONAL_OUTPUTS = {
     "drnfill": "drnfill_output",  # DeRaindrop's raindrop detector + neighbour fill
     "fix": "gtfill_output",  # the ground-truth droplet mask + neighbour fill
     "drn": "deraindrop_output",  # DeRaindrop itself
+    "lama": "lama_output",  # DeRaindrop's raindrop detector + LaMa, in pixel space (eval_lama.py)
 }
 ROW_LABELS = {
     "rainy": "Rainy input (left alone)",
     "out": "UnReflectAnything, stock (its highlight detector)",
     "drnmask": "UnReflectAnything, raindrop detector + released inpainter",
     "drnfill": "UnReflectAnything, raindrop detector + neighbour fill",
+    "lama": "Raindrop detector + LaMa fill (pixel space, full resolution)",
     "fix": "UnReflectAnything, correct droplet mask + neighbour fill (upper bound on detection)",
     "drn": "DeRaindrop (CVPR 2018, open-source raindrop model)",
 }
@@ -213,7 +215,7 @@ def show_example(name: str):
         if e.get(key + "_scores") is not None:
             p, s = e[key + "_scores"]
             md += f"| {label} | {p:.2f} | {s:.3f} |\n"
-    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], md
+    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], e["lama"], md
 
 
 DRN_VERSIONS = {"Released": derainnet.WEIGHTS, "Fine-tuned on VRGS": derainnet.FINETUNED}
@@ -247,11 +249,12 @@ def run_stock_live(img: Image.Image):
 
 MODES = [
     "Raindrop detector + neighbour fill (removes the droplets)",
+    "Raindrop detector + LaMa fill (pixel space, full resolution)",
     "Raindrop detector + released inpainter (turns droplets into dark blobs)",
     "Stock model as-is (its highlight detector)",
     "Correct droplet mask + neighbour fill (DeRaindrop examples only)",
 ]
-RAINDROP_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
+RAINDROP_MODE, LAMA_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
 
 
 def _find_clean(img: Image.Image):
@@ -280,7 +283,8 @@ def watch_model(img: Image.Image, mode: str):
     fill = "neighbours" if mode in (RAINDROP_MODE, GT_MODE) else "learned"
     n = len(model_stages.STAGES)
     images, notes, times = [None] * n, [""] * n, [None] * n
-    prefix = "" if model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
+    lama = mode == LAMA_MODE
+    prefix = "" if lama or model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
 
     def table(running: int) -> str:
         rows = []
@@ -295,19 +299,22 @@ def watch_model(img: Image.Image, mode: str):
         total = sum(t for t in times if t is not None)
         footer = ""
         if all(t is not None for t in times):
-            footer = f"\n\n**Total: {total:.1f}s** on this laptop's CPU."
+            footer = f"\n\n**Total: {total:.1f}s** on this laptop's {model_stages.DEVICE.type.upper()}."
             if clean is not None:
                 (ip, is_), (op, os_) = _scores(img, clean), _scores(images[-1], clean)
-                verdict = "better" if op > ip and os_ > is_ else "worse" if op < ip and os_ < is_ else "mixed"
+                verdict = ("**better** than leaving it alone" if op > ip and os_ > is_ else
+                           "**worse** than leaving it alone" if op < ip and os_ < is_ else
+                           "**mixed**: better than leaving it alone on one score, worse on the other")
                 footer += (
                     f"\n\n**Against the clean photo:** rainy input {ip:.2f} dB / SSIM {is_:.3f} → "
-                    f"output {op:.2f} dB / SSIM {os_:.3f} (**{verdict}** than leaving it alone)"
+                    f"output {op:.2f} dB / SSIM {os_:.3f} ({verdict})"
                 )
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
     yield [table(0)] + images
-    for i, secs, im, note in model_stages.run_stages(img, mask_override=mask_override, composite=composite,
-                                                      detector=detector, fill=fill):
+    stages = (model_stages.run_lama_stages(img) if lama else
+              model_stages.run_stages(img, mask_override=mask_override, composite=composite, detector=detector, fill=fill))
+    for i, secs, im, note in stages:
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
             yield [table(0)] + images
@@ -382,7 +389,8 @@ with gr.Blocks() as demo:
                     info="The raindrop detector (borrowed from DeRaindrop) marks every rainy patch; the stock one looks "
                          "for bright highlights instead. The released inpainter was trained to correct highlights in "
                          "place, so it keeps each droplet and darkens it; neighbour fill rebuilds those patches from "
-                         "the clean ones around them. The correct mask shows what perfect detection would give.",
+                         "the clean ones around them. LaMa skips the feature space and paints the marked pixels "
+                         "directly at full resolution. The correct mask shows what perfect detection would give.",
                 )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
@@ -419,8 +427,9 @@ with gr.Blocks() as demo:
             stock_img = gr.Image(type="pil", label=ROW_LABELS["out"])
             drnmask_img = gr.Image(type="pil", label=ROW_LABELS["drnmask"])
             drnfill_img = gr.Image(type="pil", label=ROW_LABELS["drnfill"])
+            lama_img = gr.Image(type="pil", label=ROW_LABELS["lama"])
         scores_md = gr.Markdown()
-        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, scores_md]
+        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, lama_img, scores_md]
         pick.change(show_example, pick, example_outputs)
         if names:
             demo.load(show_example, pick, example_outputs)

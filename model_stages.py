@@ -17,6 +17,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 
 import matplotlib
 import numpy as np
@@ -24,6 +25,8 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 from torchvision.transforms import functional as TF
+
+from raindrop_paths import RAINDROP_ROOT
 
 # The GPU when there is one; RAIN_DEVICE=cpu forces the CPU (benchmark_efficiency.py does).
 DEVICE = torch.device(os.environ.get("RAIN_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -120,6 +123,68 @@ def neighbour_fill(T: torch.Tensor, hole: torch.Tensor, grid: int, smooth_passes
         sm = F.avg_pool2d(F.pad(x, (1, 1, 1, 1), mode="replicate"), 3, 1)
         x = torch.where(hole_g, sm, x)
     return x.reshape(B, C, N).transpose(1, 2)
+
+
+LAMA_WEIGHTS = Path(os.environ.get("LAMA_WEIGHTS", RAINDROP_ROOT / "lama" / "big-lama.pt"))
+_lama = None
+
+
+def raindrop_mask(img: Image.Image, rain_threshold: float = 0.2, grow: int = 9) -> torch.Tensor:
+    """DeRaindrop's raindrop map thresholded and grown a little (droplet edges
+    refract too but score lower than their cores), the same rule run_stages
+    uses with detector="deraindrop". [1,1,H,W] bool at the input's resolution."""
+    import derainnet
+
+    att = derainnet.attention_map(img)
+    return F.max_pool2d((att > rain_threshold).float(), kernel_size=grow, stride=1, padding=grow // 2) > 0.5
+
+
+@torch.no_grad()
+def lama_fill(img: Image.Image, mask: torch.Tensor) -> Image.Image:
+    """Inpaints the masked pixels with LaMa (big-lama, Suvorov et al., WACV 2022)
+    at the image's full resolution, in pixel space, and keeps the original
+    pixels everywhere else. mask: [1,1,H,W] bool, True = fill."""
+    global _lama
+    if _lama is None:
+        _lama = torch.jit.load(str(LAMA_WEIGHTS), map_location=DEVICE).eval()
+    x = TF.to_tensor(img.convert("RGB")).unsqueeze(0)
+    m = mask.float().cpu()
+    h, w = x.shape[-2:]
+    ph, pw = -h % 8, -w % 8  # LaMa needs sides divisible by 8
+    xp = F.pad(x, (0, pw, 0, ph), mode="reflect").to(DEVICE)
+    mp = F.pad(m, (0, pw, 0, ph), mode="reflect").to(DEVICE)
+    out = _lama(xp, (mp > 0.5).float())[..., :h, :w].clamp(0, 1).cpu()
+    return TF.to_pil_image(torch.where(m > 0.5, out, x)[0])
+
+
+def run_lama_stages(img: Image.Image, mask_override: torch.Tensor | None = None, rain_threshold: float = 0.2):
+    """run_stages' counterpart for the LaMa fill, yielding the same
+    (stage_index, seconds, image, note) tuples so the demo can show it the same
+    way. LaMa works on pixels, so there is no DINOv3 encoding or decoding."""
+    yield 0, 0.0, img.convert("RGB"), "Skipped: LaMa fills in pixels at full resolution, so no DINOv3 features are needed"
+    t = time.perf_counter()
+    if mask_override is None:
+        import derainnet
+
+        att = derainnet.attention_map(img)
+        yield 1, time.perf_counter() - t, _heatmap(att), (
+            f"DeRaindrop's raindrop detector: likelihood of 'raindrop here'. Peak {att.max().item():.2f}, mean {att.mean().item():.3f}"
+        )
+        t = time.perf_counter()
+        mask = F.max_pool2d((att > rain_threshold).float(), kernel_size=9, stride=1, padding=4) > 0.5
+        source = "raindrop detector"
+    else:
+        yield 1, 0.0, None, "Skipped: using the correct droplet mask"
+        mask = mask_override
+        source = "ground-truth droplet mask"
+    x = TF.to_tensor(img.convert("RGB")).unsqueeze(0)
+    yield 2, time.perf_counter() - t, _overlay(x, mask), (
+        f"From the {source}: {100 * mask.float().mean().item():.1f}% of pixels marked for repair, in red"
+    )
+    t = time.perf_counter()
+    out = lama_fill(img, mask)
+    yield 3, time.perf_counter() - t, out, "Marked pixels inpainted by LaMa on the " + DEVICE.type.upper()
+    yield 4, 0.0, out, "Skipped: LaMa already works at full resolution; original pixels kept outside the mask"
 
 
 def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Tensor | None = None,

@@ -1,0 +1,30 @@
+{
+  "run": "DeRaindrop's raindrop map (threshold 0.2, grown 9 px) + big-lama, full resolution, CUDA NVIDIA GeForce RTX 4060 Laptop GPU",
+  "real_test_a": {
+    "images": 8,
+    "rainy input": {
+      "psnr": 25.08,
+      "ssim": 0.863
+    },
+    "Raindrop detector + neighbour fill": {
+      "psnr": 23.38,
+      "ssim": 0.817,
+      "beats_input": 0
+    },
+    "Raindrop detector + LaMa": {
+      "psnr": 25.3,
+      "ssim": 0.842,
+      "beats_input": 0
+    },
+    "True droplet mask + LaMa (upper bound)": {
+      "psnr": 26.86,
+      "ssim": 0.87,
+      "beats_input": 3
+    }
+  },
+  "lama": {
+    "pixels_masked_pct": 24.0,
+    "true_mask_pixels_pct": 12.8,
+    "latency_s_median": 0.32
+  }
+}

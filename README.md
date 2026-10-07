@@ -42,7 +42,7 @@ GPU, so the current model still uses pretrained parts:
 |---|---|---|
 | Raindrop detector | DeRaindrop's attention network (Qian et al., CVPR 2018) | Trained on VRGS masks |
 | Encoder | DINOv3 ViT-L/16, frozen | Unchanged |
-| Repair step | **Neighbour fill**: rebuilds each patch from the clean patches around it, with no learned weights | Inpainter trained on VRGS pairs |
+| Repair step | **Neighbour fill**: rebuilds each patch from the clean patches around it, with no learned weights; or **LaMa** (big-lama, pretrained), which inpaints the marked pixels directly at full resolution | Inpainter trained on VRGS pairs |
 | Decoder | UnReflectAnything's released DPT decoder | Fine-tuned on VRGS pairs |
 
 **Why neighbour fill:** UnReflectAnything's released token inpainter was trained with an inverted mask. At each hole
@@ -58,8 +58,18 @@ and darkens it. Neighbour fill discards the drop's features and is about 9× fas
 | Rainy input, left alone | 25.08 | 0.863 | – |
 | UnReflectAnything, stock | 23.58 | 0.786 | 0 / 8 |
 | + raindrop detector, released inpainter | 22.86 | 0.819 | 0 / 8 |
-| + raindrop detector, neighbour fill (current) | 23.38 | 0.817 | 0 / 8 |
+| + raindrop detector, neighbour fill | 23.38 | 0.817 | 0 / 8 |
+| Raindrop detector + LaMa fill (pixel space) | **25.30** | 0.842 | 0 / 8 |
+| *True droplet mask + LaMa (upper bound on detection)* | *26.86* | *0.870* | *3 / 8* |
 | DeRaindrop | 31.32 | 0.922 | 7 / 8 |
+
+**LaMa fill** ([eval_lama.py](eval_lama.py), [eval_results/lama_fill.json](eval_results/lama_fill.json)) is the first
+repair step to score above the untouched photo on PSNR (+0.22 dB, and +1.9 dB over neighbour fill); visually it
+rebuilds doors, railings and wall tiles where neighbour fill leaves blocky smears. It still loses on SSIM, and the
+detector is why: DeRaindrop's raindrop map marks 24% of the pixels where the true droplets cover 13%, so LaMa repaints
+clean areas, and it misses faint, out-of-focus droplets. With the true droplet mask (taken from the clean photo, so
+only a diagnostic) the same fill reaches 26.86 dB / 0.870, above the untouched photo on both. A VRGS-trained detector
+is the next lever. LaMa takes about 0.3 s per photo on the GPU.
 
 DeRaindrop wins on these photos, but they come from its own test set (the glass pane and camera it was trained on).
 On VRGS dashcam/CCTV rain it beats the untouched frame on **0 of 8** frames: it leaves the streaks and glare in
@@ -118,6 +128,7 @@ raindrop_project/
   organized/KITTI_Clean/all/rgb/   KITTI frames from image_02/data, used for training
   derainnet_code/                  git clone of https://github.com/rui1996/DeRaindrop (weights/gen.pkl)
   checkpoints/                     fine-tuned weights written by finetune_deraindrop.py
+  lama/big-lama.pt                 LaMa weights (TorchScript, 196 MB): github.com/enesmsahin/simple-lama-inpainting releases v0.1.0
   demo_assets/                     demo examples and precomputed outputs
 ```
 
@@ -148,7 +159,8 @@ reference for the full GPU training config.
 |---|---|
 | [raindrop_render.py](raindrop_render.py) | VRGS: the rain-on-glass renderer |
 | [raindrop_engine.py](raindrop_engine.py), [train_raindrop.py](train_raindrop.py) | Training with VRGS as the degradation |
-| [model_stages.py](model_stages.py) | Runs the model one stage at a time; neighbour fill |
+| [model_stages.py](model_stages.py) | Runs the model one stage at a time; neighbour fill and LaMa fill |
+| [eval_lama.py](eval_lama.py) | Scores LaMa fill against neighbour fill and the untouched input |
 | [derainnet.py](derainnet.py) | DeRaindrop's generator, ported to current PyTorch (GPU when available, else CPU) |
 | [finetune_deraindrop.py](finetune_deraindrop.py) | Fine-tunes DeRaindrop on VRGS + real pairs |
 | [demo_app.py](demo_app.py), [run_demo.bat](run_demo.bat) | Gradio demo |
@@ -178,5 +190,7 @@ reference for the full GPU training config.
 - Droplet optics follow M. Roser and A. Geiger, *Video-based Raindrop Detection for Improved Image Registration*,
   ICCV Workshops 2009.
 - Glare assets: Y. Dai et al., *Flare7K*, NeurIPS 2022.
+- **LaMa**: R. Suvorov et al., *Resolution-robust Large Mask Inpainting with Fourier Convolutions*, WACV 2022
+  (Apache 2.0); TorchScript export of big-lama from the simple-lama-inpainting project.
 
 **Author:** Vyaan Sachdeva
