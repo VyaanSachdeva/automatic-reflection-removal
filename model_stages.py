@@ -30,16 +30,20 @@ from raindrop_paths import RAINDROP_ROOT
 
 # The GPU when there is one; RAIN_DEVICE=cpu forces the CPU (benchmark_efficiency.py does).
 DEVICE = torch.device(os.environ.get("RAIN_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu"))
-_wrapper = None
+# Our model, trained on VRGS (train_raindrop.py + config/raindrop_train.yaml): the
+# raindrop detector and token inpainter it learned, on the released encoder/decoder.
+TRAINED_WEIGHTS = Path(os.environ.get("RAIN_MODEL_WEIGHTS", RAINDROP_ROOT / "checkpoints" / "raindrop_model.pt"))
+_wrapper = None  # the released UnReflectAnything model
+_trained = None  # ours, loaded from TRAINED_WEIGHTS
 _M = None  # the package's models module, for its mask helpers
 _load_lock = threading.Lock()
 
 
-def _load():
+def _load(trained: bool = False):
     """Safe to call from a background preload thread and a request at once."""
-    global _wrapper, _M
+    global _wrapper, _trained, _M
     with _load_lock:
-        if _wrapper is not None:
+        if (_trained if trained else _wrapper) is not None:
             return
         site_pkgs = next(p for p in sys.path if p.rstrip("\\/").endswith("site-packages"))
         saved_path = sys.path[:]
@@ -49,10 +53,16 @@ def _load():
         try:
             import unreflectanything as ura
 
-            wrapper = ura.model(pretrained=True, device=str(DEVICE))
+            if trained:
+                wrapper = ura.model(weights_path=str(TRAINED_WEIGHTS), device=str(DEVICE))
+            else:
+                wrapper = ura.model(pretrained=True, device=str(DEVICE))
             wrapper.eval()
             _M = sys.modules["models"]
-            _wrapper = wrapper
+            if trained:
+                _trained = wrapper
+            else:
+                _wrapper = wrapper
         finally:
             sys.path[:] = saved_path
 
@@ -139,6 +149,28 @@ def raindrop_mask(img: Image.Image, rain_threshold: float = 0.2, grow: int = 9) 
     return F.max_pool2d((att > rain_threshold).float(), kernel_size=grow, stride=1, padding=grow // 2) > 0.5
 
 
+# Chosen on the held-out VRGS drive (drive_0113, exact masks, never trained on): best mask IoU
+# (0.534, vs 0.421 for DeRaindrop's map at 0.2). Not tuned on any test photo.
+TRAINED_THRESHOLD = 0.4
+
+
+@torch.no_grad()
+def trained_raindrop_map(img: Image.Image) -> torch.Tensor:
+    """Our VRGS-trained detector's likelihood of rain on the glass, [1,1,H,W] in
+    [0,1] at the input's resolution (it runs at the model's 448 px working size)."""
+    _load(trained=True)
+    inner, side = _trained._model, _trained.image_size
+    x = TF.resize(TF.to_tensor(img.convert("RGB")).unsqueeze(0), [side, side], antialias=True).to(DEVICE)
+    hl = inner.decoders["highlight"](inner.dinov3(inner.dinov3.preprocess_image(x))["selected_hidden_states"])
+    return F.interpolate(hl.float(), size=(img.height, img.width), mode="bilinear", align_corners=False).cpu()
+
+
+def trained_raindrop_mask(img: Image.Image, threshold: float = TRAINED_THRESHOLD, grow: int = 5) -> torch.Tensor:
+    """Our detector's map thresholded and grown a little: [1,1,H,W] bool at the input's resolution."""
+    m = (trained_raindrop_map(img) > threshold).float()
+    return F.max_pool2d(m, kernel_size=grow, stride=1, padding=grow // 2) > 0.5
+
+
 @torch.no_grad()
 def lama_fill(img: Image.Image, mask: torch.Tensor) -> Image.Image:
     """Inpaints the masked pixels with LaMa (big-lama, Suvorov et al., WACV 2022)
@@ -157,12 +189,32 @@ def lama_fill(img: Image.Image, mask: torch.Tensor) -> Image.Image:
     return TF.to_pil_image(torch.where(m > 0.5, out, x)[0])
 
 
-def run_lama_stages(img: Image.Image, mask_override: torch.Tensor | None = None, rain_threshold: float = 0.2):
+def run_lama_stages(img: Image.Image, mask_override: torch.Tensor | None = None, rain_threshold: float = 0.2,
+                    detector: str = "deraindrop"):
     """run_stages' counterpart for the LaMa fill, yielding the same
     (stage_index, seconds, image, note) tuples so the demo can show it the same
-    way. LaMa works on pixels, so there is no DINOv3 encoding or decoding."""
-    yield 0, 0.0, img.convert("RGB"), "Skipped: LaMa fills in pixels at full resolution, so no DINOv3 features are needed"
+    way. LaMa works on pixels, so there is no DINOv3 encoding or decoding.
+    detector: "deraindrop" (DeRaindrop's attention map) or "trained" (ours, trained on VRGS)."""
     t = time.perf_counter()
+    if detector == "trained" and mask_override is None:
+        att = trained_raindrop_map(img)
+        yield 0, time.perf_counter() - t, img.convert("RGB"), "DINOv3 features at 448 px, for our raindrop detector"
+        yield 1, 0.0, _heatmap(att), (
+            f"Our raindrop detector, trained on VRGS: likelihood of 'rain on the glass here'. "
+            f"Peak {att.max().item():.2f}, mean {att.mean().item():.3f}"
+        )
+        t = time.perf_counter()
+        mask = F.max_pool2d((att > TRAINED_THRESHOLD).float(), kernel_size=5, stride=1, padding=2) > 0.5
+        x = TF.to_tensor(img.convert("RGB")).unsqueeze(0)
+        yield 2, time.perf_counter() - t, _overlay(x, mask), (
+            f"From our trained raindrop detector: {100 * mask.float().mean().item():.1f}% of pixels marked for repair, in red"
+        )
+        t = time.perf_counter()
+        out = lama_fill(img, mask)
+        yield 3, time.perf_counter() - t, out, "Marked pixels inpainted by LaMa on the " + DEVICE.type.upper()
+        yield 4, 0.0, out, "Skipped: LaMa already works at full resolution; original pixels kept outside the mask"
+        return
+    yield 0, 0.0, img.convert("RGB"), "Skipped: LaMa fills in pixels at full resolution, so no DINOv3 features are needed"
     if mask_override is None:
         import derainnet
 
@@ -189,9 +241,14 @@ def run_lama_stages(img: Image.Image, mask_override: torch.Tensor | None = None,
 
 def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Tensor | None = None,
                composite: bool = False, detector: str = "highlight", rain_threshold: float = 0.2,
-               fill: str = "learned"):
+               fill: str = "learned", trained: bool = False):
     """Generator. Yields (stage_index, seconds, image, note) as each stage
     finishes; stage_index -1 is model loading.
+
+    trained: use our VRGS-trained model (TRAINED_WEIGHTS) instead of the released
+    one. Its "highlight" detector is the retrained raindrop detector, and its
+    learned inpainter takes the mask the documented way round (True = hole), as
+    it was trained with INPAINT_FEED_RAW_MASK.
 
     mask_override: [1,1,H,W] bool at the input's resolution; replaces the
     model's own detector when choosing what to repair.
@@ -205,13 +262,14 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
     (blended at the input's full resolution), instead of the decoder's
     re-rendering of the whole image, which softens detail everywhere.
     """
-    if _wrapper is None:
+    if (_trained if trained else _wrapper) is None:
         t = time.perf_counter()
-        _load()
+        _load(trained)
         yield -1, time.perf_counter() - t, None, "Model loaded."
 
-    inner = _wrapper._model
-    side = _wrapper.image_size
+    wrapper = _trained if trained else _wrapper
+    inner = wrapper._model
+    side = wrapper.image_size
     orig_w, orig_h = img.size
     x = TF.resize(TF.to_tensor(img.convert("RGB")).unsqueeze(0), [side, side], antialias=True).to(DEVICE)
     patch = inner.patch_size
@@ -233,7 +291,8 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
             what = "DeRaindrop's raindrop detector: likelihood of 'raindrop here'"
         else:
             hl = inner.decoders["highlight"](tokens)
-            what = "The model's highlight detector: likelihood of 'needs removing'"
+            what = ("Our raindrop detector, trained on VRGS: likelihood of 'rain on the glass here'" if trained
+                    else "The model's highlight detector: likelihood of 'needs removing'")
         yield 1, time.perf_counter() - t, _heatmap(hl), (
             f"{what} (brighter = more likely; square-root scaled so faint "
             f"detections show). Peak {hl.max().item():.2f}, mean {hl.mean().item():.3f}"
@@ -252,7 +311,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
             dil = max(1, x.shape[-1] // (patch * 4))
             dil = dil + 1 if dil % 2 == 0 else dil
             pixel_mask = F.max_pool2d(hl.float(), kernel_size=dil, stride=1, padding=dil // 2) > threshold
-            source = "model's own detector"
+            source = "trained raindrop detector" if trained else "model's own detector"
         soft = "soft" in inner.token_inpainter_class_name.lower()
         patch_mask = _M.pixel_mask_to_patch_mask(pixel_mask, patch_size=patch, threshold=0, invert=False, soft=soft)
         if soft:
@@ -270,7 +329,9 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         for T in tokens:
             if fill == "neighbours":
                 T_inp = neighbour_fill(T, patch_mask > 0.5 if is_soft else patch_mask, grid)
-            else:
+            elif trained:  # trained with the documented polarity: True = hole
+                T_inp = inner.token_inpaint(T, patch_mask)
+            else:  # the released inpainter was trained with the mask inverted
                 visibility = 1.0 - patch_mask if is_soft else torch.logical_not(patch_mask)
                 T_inp = inner.token_inpaint(T, visibility)
             if is_soft:
@@ -283,7 +344,7 @@ def run_stages(img: Image.Image, threshold: float = 0.3, mask_override: torch.Te
         change = change / change.max().clamp_min(1e-8)
         change_img = F.interpolate(change, size=x.shape[-2:], mode="nearest")
         how = ("rebuilt from the clean patches around them" if fill == "neighbours"
-               else "by the released inpainter")
+               else "by our inpainter, trained on VRGS" if trained else "by the released inpainter")
         yield 3, time.perf_counter() - t, _overlay(x, change_img, color=(0.1, 0.8, 1.0), alpha=0.7), (
             f"Marked patches {how}. Brighter cyan = features rewritten more"
         )

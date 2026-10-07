@@ -1,0 +1,87 @@
+{
+  "real_test_a": {
+    "images": 58,
+    "rainy input": {
+      "psnr": 23.81,
+      "ssim": 0.847
+    },
+    "UnReflectAnything, stock": {
+      "psnr": 19.14,
+      "ssim": 0.753,
+      "beats_input": 0
+    },
+    "Raindrop detector + neighbour fill": {
+      "psnr": 22.3,
+      "ssim": 0.787,
+      "beats_input": 2
+    },
+    "Raindrop detector + LaMa": {
+      "psnr": 24.94,
+      "ssim": 0.825,
+      "beats_input": 11
+    },
+    "DeRaindrop (released)": {
+      "psnr": 30.93,
+      "ssim": 0.911,
+      "beats_input": 57
+    },
+    "DeRaindrop + VRGS fine-tune": {
+      "psnr": 30.11,
+      "ssim": 0.912,
+      "beats_input": 58
+    },
+    "Ours: VRGS-trained detector + LaMa": {
+      "psnr": 23.59,
+      "ssim": 0.761,
+      "beats_input": 0
+    },
+    "Ours: VRGS-trained detector + its own inpainter": {
+      "psnr": 16.46,
+      "ssim": 0.62,
+      "beats_input": 0
+    }
+  },
+  "vrgs_heldout": {
+    "images": 18,
+    "rainy input": {
+      "psnr": 25.41,
+      "ssim": 0.928
+    },
+    "UnReflectAnything, stock": {
+      "psnr": 15.87,
+      "ssim": 0.731,
+      "beats_input": 0
+    },
+    "Raindrop detector + neighbour fill": {
+      "psnr": 19.84,
+      "ssim": 0.822,
+      "beats_input": 0
+    },
+    "Raindrop detector + LaMa": {
+      "psnr": 20.27,
+      "ssim": 0.816,
+      "beats_input": 0
+    },
+    "DeRaindrop (released)": {
+      "psnr": 25.78,
+      "ssim": 0.898,
+      "beats_input": 0
+    },
+    "DeRaindrop + VRGS fine-tune": {
+      "psnr": 26.29,
+      "ssim": 0.923,
+      "beats_input": 7
+    },
+    "Ours: VRGS-trained detector + LaMa": {
+      "psnr": 23.15,
+      "ssim": 0.859,
+      "beats_input": 0
+    },
+    "Ours: VRGS-trained detector + its own inpainter": {
+      "psnr": 19.02,
+      "ssim": 0.789,
+      "beats_input": 0
+    }
+  },
+  "run": "CUDA; our model: raindrop_model.pt"
+}

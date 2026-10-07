@@ -102,6 +102,7 @@ OPTIONAL_OUTPUTS = {
     "fix": "gtfill_output",  # the ground-truth droplet mask + neighbour fill
     "drn": "deraindrop_output",  # DeRaindrop itself
     "lama": "lama_output",  # DeRaindrop's raindrop detector + LaMa, in pixel space (eval_lama.py)
+    "trained": "trained_output",  # our VRGS-trained detector + inpainter (eval_all.py)
 }
 ROW_LABELS = {
     "rainy": "Rainy input (left alone)",
@@ -109,6 +110,7 @@ ROW_LABELS = {
     "drnmask": "UnReflectAnything, raindrop detector + released inpainter",
     "drnfill": "UnReflectAnything, raindrop detector + neighbour fill",
     "lama": "Raindrop detector + LaMa fill (pixel space, full resolution)",
+    "trained": "Ours: VRGS-trained raindrop detector + LaMa fill",
     "fix": "UnReflectAnything, correct droplet mask + neighbour fill (upper bound on detection)",
     "drn": "DeRaindrop (CVPR 2018, open-source raindrop model)",
 }
@@ -156,8 +158,8 @@ def _finetune_md() -> str:
             cells.append(f"{s['psnr']:.2f} dB / {s['ssim']:.3f}{beats}")
         md += f"| {label[0].upper() + label[1:]} | {cells[0]} | {cells[1]} |\n"
     return md + (
-        "\nA small step, from about 20 minutes of CPU training: it moves toward dashcam/CCTV rain while keeping nearly "
-        "all of its real-photo performance. The full GPU run is the same recipe at scale."
+        "\nAfter 30 minutes on the GPU it is the first version that helps on dashcam/CCTV rain (it removes some "
+        "streaks and glare), at the cost of 0.8 dB PSNR on the real photos; SSIM there is unchanged."
     )
 
 
@@ -215,7 +217,7 @@ def show_example(name: str):
         if e.get(key + "_scores") is not None:
             p, s = e[key + "_scores"]
             md += f"| {label} | {p:.2f} | {s:.3f} |\n"
-    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], e["lama"], md
+    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], e["lama"], e["trained"], md
 
 
 DRN_VERSIONS = {"Released": derainnet.WEIGHTS, "Fine-tuned on VRGS": derainnet.FINETUNED}
@@ -255,6 +257,12 @@ MODES = [
     "Correct droplet mask + neighbour fill (DeRaindrop examples only)",
 ]
 RAINDROP_MODE, LAMA_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
+# Our model, trained on VRGS. Offered once its weights exist. Its raindrop detector feeds LaMa; its own
+# token inpainter (one hour from scratch) is shown too, but still fills marked areas with flat grey.
+TRAINED_MODE = "Our VRGS-trained raindrop detector + LaMa fill"
+TRAINED_FULL_MODE = "Our VRGS-trained detector + its own inpainter (needs more training)"
+if model_stages.TRAINED_WEIGHTS.exists():
+    MODES = [TRAINED_MODE] + MODES + [TRAINED_FULL_MODE]
 
 
 def _find_clean(img: Image.Image):
@@ -283,8 +291,9 @@ def watch_model(img: Image.Image, mode: str):
     fill = "neighbours" if mode in (RAINDROP_MODE, GT_MODE) else "learned"
     n = len(model_stages.STAGES)
     images, notes, times = [None] * n, [""] * n, [None] * n
-    lama = mode == LAMA_MODE
-    prefix = "" if lama or model_stages._wrapper is not None else "Loading the pretrained model (first run only, about 30 seconds)...\n\n"
+    lama, trained, full = mode == LAMA_MODE, mode == TRAINED_MODE, mode == TRAINED_FULL_MODE
+    loaded = model_stages._trained if (trained or full) else model_stages._wrapper
+    prefix = "" if lama or loaded is not None else "Loading the model (first run only, about 30 seconds)...\n\n"
 
     def table(running: int) -> str:
         rows = []
@@ -312,8 +321,15 @@ def watch_model(img: Image.Image, mode: str):
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
     yield [table(0)] + images
-    stages = (model_stages.run_lama_stages(img) if lama else
-              model_stages.run_stages(img, mask_override=mask_override, composite=composite, detector=detector, fill=fill))
+    if lama:
+        stages = model_stages.run_lama_stages(img)
+    elif trained:
+        stages = model_stages.run_lama_stages(img, detector="trained")
+    elif full:
+        stages = model_stages.run_stages(img, composite=True, detector="highlight", fill="learned", trained=True,
+                                         threshold=model_stages.TRAINED_THRESHOLD)
+    else:
+        stages = model_stages.run_stages(img, mask_override=mask_override, composite=composite, detector=detector, fill=fill)
     for i, secs, im, note in stages:
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
@@ -428,8 +444,10 @@ with gr.Blocks() as demo:
             drnmask_img = gr.Image(type="pil", label=ROW_LABELS["drnmask"])
             drnfill_img = gr.Image(type="pil", label=ROW_LABELS["drnfill"])
             lama_img = gr.Image(type="pil", label=ROW_LABELS["lama"])
+            trained_img = gr.Image(type="pil", label=ROW_LABELS["trained"])
         scores_md = gr.Markdown()
-        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, lama_img, scores_md]
+        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, lama_img, trained_img,
+                           scores_md]
         pick.change(show_example, pick, example_outputs)
         if names:
             demo.load(show_example, pick, example_outputs)
@@ -450,4 +468,6 @@ if __name__ == "__main__":
     # Load the model in the background now, so the first step-by-step run
     # doesn't sit through a ~1.5 min load in front of an audience.
     threading.Thread(target=model_stages._load, daemon=True).start()
+    if model_stages.TRAINED_WEIGHTS.exists():  # ours too (~1 min: a 2.6 GB checkpoint)
+        threading.Thread(target=model_stages._load, kwargs={"trained": True}, daemon=True).start()
     demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)

@@ -39,21 +39,46 @@ Real pairs of rainy and clean footage from the same camera barely exist, so the 
 
 ## Status
 
-The synthesis, data pipeline, training engine and a live demo are built. The full training run at 896 px needs a
-GPU, so the current model still uses pretrained parts:
+The synthesis, data pipeline, training engine and a live demo are built, and a first short GPU training run is done
+(an RTX 4060 Laptop, 8 GB: 448 px, about one hour):
 
-| Stage | Currently | After VRGS training |
+| Stage | Pretrained parts | Trained on VRGS (first run) |
 |---|---|---|
-| Raindrop detector | DeRaindrop's attention network (Qian et al., CVPR 2018) | Trained on VRGS masks |
+| Raindrop detector | DeRaindrop's attention network (Qian et al., CVPR 2018) | The highlight-detector head, retrained on VRGS masks: better masks on held-out VRGS rain (IoU 0.53 vs 0.42), not yet on real photos |
 | Encoder | DINOv3 ViT-L/16, frozen | Unchanged |
-| Repair step | **Neighbour fill**: rebuilds each patch from the clean patches around it, with no learned weights; or **LaMa** (big-lama, pretrained), which inpaints the marked pixels directly at full resolution | Inpainter trained on VRGS pairs |
-| Decoder | UnReflectAnything's released DPT decoder | Fine-tuned on VRGS pairs |
+| Repair step | **Neighbour fill**: rebuilds each patch from the clean patches around it, with no learned weights; or **LaMa** (big-lama, pretrained), which inpaints the marked pixels directly at full resolution | A token inpainter trained from scratch: one hour is not enough, it fills holes with flat grey |
+| Decoder | UnReflectAnything's released DPT decoder | Unchanged (frozen) |
+
+### Results on the same test sets (GPU, all methods)
+
+Real rain: all 58 DeRaindrop test_a photos. Dashcam/CCTV rain: VRGS on a KITTI drive that nothing was trained on
+(18 frames). PSNR (dB) / SSIM against the clean image, and how many images each method improves on both
+([eval_all.py](eval_all.py), [eval_results/all_methods.json](eval_results/all_methods.json)):
+
+| Method | Real photos (58) | VRGS dashcam/CCTV rain (18) |
+|---|---|---|
+| Rainy input, left alone | 23.81 / 0.847 | 25.41 / 0.928 |
+| UnReflectAnything, stock | 19.14 / 0.753, 0 | 15.87 / 0.731, 0 |
+| DeRaindrop detector + neighbour fill | 22.30 / 0.787, 2 | 19.84 / 0.822, 0 |
+| DeRaindrop detector + LaMa | 24.94 / 0.825, 11 | 20.27 / 0.816, 0 |
+| DeRaindrop, released | **30.93** / 0.911, 57 | 25.78 / 0.898, 0 |
+| **DeRaindrop fine-tuned on VRGS** | 30.11 / **0.912**, **58** | **26.29 / 0.923, 7** |
+| Ours: VRGS-trained detector + LaMa | 23.59 / 0.761, 0 | 23.15 / 0.859, 0 |
+| Ours: VRGS-trained detector + its own inpainter | 16.46 / 0.620, 0 | 19.02 / 0.789, 0 |
+
+- **DeRaindrop fine-tuned on VRGS is the best model so far**, and the only one that improves dashcam/CCTV frames.
+- **Our trained detector helps on VRGS rain** (+2.9 dB over DeRaindrop's map with the same LaMa fill) but not on the
+  real photos, whose drops are sharper and more in focus than VRGS renders yet.
+- **Every pipeline that discards the drop's pixels and repaints them loses to the untouched frame**, even with a
+  perfect mask on the real photos only 3 of 8 improve (below). The water is usually see-through, so restoring the
+  scene behind it (as DeRaindrop does) beats inventing it. That points the architecture toward restoration, or a
+  hybrid that repaints only where a drop is opaque.
 
 **Why neighbour fill:** UnReflectAnything's released token inpainter was trained with an inverted mask. At each hole
 it receives that hole's own features and learned to correct a highlight in place, so on a raindrop it keeps the drop
 and darkens it. Neighbour fill discards the drop's features and is about 9× faster.
 
-### Results so far
+### Earlier comparison: the 8 demo photos
 
 8 real rainy photos from the DeRaindrop test set, scored against their clean versions (higher is better):
 
@@ -180,6 +205,9 @@ reference for the full GPU training config.
 | [raindrop_engine.py](raindrop_engine.py), [train_raindrop.py](train_raindrop.py) | Training with VRGS as the degradation |
 | [model_stages.py](model_stages.py) | Runs the model one stage at a time; neighbour fill and LaMa fill |
 | [eval_lama.py](eval_lama.py) | Scores LaMa fill against neighbour fill and the untouched input |
+| [eval_all.py](eval_all.py) | Scores every method, including ours, on DeRaindrop test_a and a held-out KITTI drive |
+| [download_kitti.py](download_kitti.py), [prerender_vrgs.py](prerender_vrgs.py) | More KITTI drives; the cached VRGS training set |
+| [config/raindrop_train.yaml](config/raindrop_train.yaml) | GPU training config (8 GB, 448 px) |
 | [derainnet.py](derainnet.py) | DeRaindrop's generator, ported to current PyTorch (GPU when available, else CPU) |
 | [finetune_deraindrop.py](finetune_deraindrop.py) | Fine-tunes DeRaindrop on VRGS + real pairs |
 | [demo_app.py](demo_app.py), [run_demo.bat](run_demo.bat) | Gradio demo |
@@ -192,10 +220,15 @@ reference for the full GPU training config.
 - [x] VRGS renderer (droplets, streaks, glare, haze, exact masks)
 - [x] Data pipeline (KITTI, DeRaindrop, Flare7K++) and training engine (CPU smoke test)
 - [x] Baselines, diagnosis of the released inpainter, neighbour fill
-- [x] First VRGS fine-tune (DeRaindrop)
-- [ ] Faster, vectorised VRGS for large-scale data generation
-- [ ] Full VRGS training of the detector and inpainter at 896 px on a GPU
-- [ ] Evaluation on the full DeRaindrop test sets and a CCTV source
+- [x] First VRGS fine-tune (DeRaindrop), then a 30-minute GPU fine-tune that helps on dashcam/CCTV rain
+- [x] Faster VRGS (crop-local droplets, 10–18× on the CPU) and a pre-rendered training cache
+- [x] More realistic VRGS droplets (see-through, out of focus, irregular) and a fixed glare mask
+- [x] LaMa as a pixel-space fill
+- [x] First GPU training of the detector and inpainter (448 px, one hour)
+- [x] One evaluation of every method on all of DeRaindrop test_a and a held-out KITTI drive
+- [ ] Sharper, in-focus VRGS drops, so the detector transfers to real photos
+- [ ] Restoration or a restore-and-repaint hybrid instead of repainting every marked pixel
+- [ ] Longer inpainter training (896 px, many epochs), DeRaindrop test_b and a CCTV source
 - [ ] Video: use neighbouring frames, since drops stay put while the scene moves
 
 ## Credits
