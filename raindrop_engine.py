@@ -38,8 +38,9 @@ class RaindropEngine(Engine):
         else:
             intensity_cfg = self.config.get("RAIN_INTENSITY", [0.2, 1.0])
 
+        # One intensity per image, so each batch mixes light and heavy rain.
         if isinstance(intensity_cfg, (list, tuple)) and len(intensity_cfg) == 2:
-            rain_intensity = random.uniform(float(intensity_cfg[0]), float(intensity_cfg[1]))
+            rain_intensity = [random.uniform(float(intensity_cfg[0]), float(intensity_cfg[1])) for _ in range(rgb.shape[0])]
         else:
             rain_intensity = float(intensity_cfg)
 

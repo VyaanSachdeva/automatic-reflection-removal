@@ -14,10 +14,14 @@ is close to the camera, out of focus, and stays put while the scene moves.
 Real pairs of rainy and clean footage from the same camera barely exist, so the model learns from synthetic rain.
 
 1. **VRGS (Virtual Raindrop-Glare Synthesis)** renders rain on glass onto ordinary clean driving footage (KITTI):
-   - **Droplets:** a lens-like refraction warp, realistic sizes, defocus blur, a darker core and a bright rim.
+   - **Droplets:** each drop is a tiny lens showing a shrunken, upside-down view of the scene, drawn as the glass
+     really looks a few cm from the lens: out of focus, mostly see-through, irregular (rotated ellipses with a wobbly
+     edge), numerous and mostly small, cut off at the frame edge. Every drop draws its own opacity, rim, blur and
+     edge softness, so a frame mixes faint and clearly visible drops.
    - **Streaks:** trails sharing one wind direction per frame, angled for a moving dashcam and straight down for a
      static CCTV camera.
-   - **Glare:** real light-streak shapes from Flare7K, placed where the scene already has bright lights.
+   - **Glare:** real light-streak shapes from Flare7K, placed where the scene already has bright lights. Only the
+     bright part counts as degraded in the mask.
    - **Haze:** a thin wet-glass veil over the whole frame.
 
    Every rendered frame comes with an exact mask of the pixels it changed, which is the detector's training target.
