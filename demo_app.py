@@ -261,8 +261,11 @@ RAINDROP_MODE, LAMA_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
 # token inpainter (one hour from scratch) is shown too, but still fills marked areas with flat grey.
 TRAINED_MODE = "Our VRGS-trained raindrop detector + LaMa fill"
 TRAINED_FULL_MODE = "Our VRGS-trained detector + its own inpainter (needs more training)"
+# The modes the demo offers: ours, the two repair steps on DeRaindrop's detector, and the stock baseline.
+# The others (released inpainter, correct mask, our unfinished inpainter) stay available in code as diagnostics.
+SHOWN_MODES = [LAMA_MODE, RAINDROP_MODE, STOCK_MODE]
 if model_stages.TRAINED_WEIGHTS.exists():
-    MODES = [TRAINED_MODE] + MODES + [TRAINED_FULL_MODE]
+    SHOWN_MODES = [TRAINED_MODE] + SHOWN_MODES
 
 
 def _find_clean(img: Image.Image):
@@ -401,12 +404,11 @@ with gr.Blocks() as demo:
             with gr.Column(scale=1):
                 watch_in = gr.Image(type="pil", label="Rainy image")
                 watch_mode = gr.Radio(
-                    MODES, value=RAINDROP_MODE, label="Which regions to repair",
-                    info="The raindrop detector (borrowed from DeRaindrop) marks every rainy patch; the stock one looks "
-                         "for bright highlights instead. The released inpainter was trained to correct highlights in "
-                         "place, so it keeps each droplet and darkens it; neighbour fill rebuilds those patches from "
-                         "the clean ones around them. LaMa skips the feature space and paints the marked pixels "
-                         "directly at full resolution. The correct mask shows what perfect detection would give.",
+                    SHOWN_MODES, value=SHOWN_MODES[0], label="How to find and repair the rain",
+                    info="Ours finds the rain with a detector trained on VRGS; the others use DeRaindrop's raindrop "
+                         "detector. LaMa paints the marked pixels directly at full resolution; neighbour fill rebuilds "
+                         "marked patches from the clean ones around them. The stock model looks for bright highlights, "
+                         "not rain.",
                 )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
@@ -470,4 +472,5 @@ if __name__ == "__main__":
     threading.Thread(target=model_stages._load, daemon=True).start()
     if model_stages.TRAINED_WEIGHTS.exists():  # ours too (~1 min: a 2.6 GB checkpoint)
         threading.Thread(target=model_stages._load, kwargs={"trained": True}, daemon=True).start()
-    demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
+    # The example images live in raindrop_project/, outside the repo, so Gradio must be allowed to serve them.
+    demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True, allowed_paths=[str(RAINDROP_ROOT)])
