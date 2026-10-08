@@ -17,6 +17,7 @@ multiple of 4; derain() handles both and works in RGB.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -79,22 +80,30 @@ class Generator(nn.Module):
         self.outframe2 = _conv_relu(128, 3)
         self.output = nn.Sequential(nn.Conv2d(32, 3, 3, 1, 1))
 
+    @staticmethod
+    def attention_start(input):
+        """The attention branch's initial (mask, h, c) state."""
+        b, _, row, col = input.shape
+        return (input.new_full((b, 1, row, col), 0.5), input.new_zeros((b, 32, row, col)),
+                input.new_zeros((b, 32, row, col)))
+
+    def attention_step(self, input, mask, h, c):
+        """One pass of the recurrent raindrop attention: refines the previous pass's mask."""
+        x = self.det_conv0(torch.cat((input, mask), 1))
+        for block in (self.det_conv1, self.det_conv2, self.det_conv3, self.det_conv4, self.det_conv5):
+            x = F.relu(block(x) + x)
+        x = torch.cat((x, h), 1)
+        i, f, g, o = self.conv_i(x), self.conv_f(x), self.conv_g(x), self.conv_o(x)
+        c = f * c + i * g
+        h = o * torch.tanh(c)
+        return self.det_conv_mask(h), h, c
+
     def attention(self, input):
         """The recurrent raindrop-attention branch alone: list of ITERATION maps."""
-        b, _, row, col = input.shape
-        mask = input.new_full((b, 1, row, col), 0.5)
-        h = input.new_zeros((b, 32, row, col))
-        c = input.new_zeros((b, 32, row, col))
+        mask, h, c = self.attention_start(input)
         mask_list = []
         for _ in range(ITERATION):
-            x = self.det_conv0(torch.cat((input, mask), 1))
-            for block in (self.det_conv1, self.det_conv2, self.det_conv3, self.det_conv4, self.det_conv5):
-                x = F.relu(block(x) + x)
-            x = torch.cat((x, h), 1)
-            i, f, g, o = self.conv_i(x), self.conv_f(x), self.conv_g(x), self.conv_o(x)
-            c = f * c + i * g
-            h = o * torch.tanh(c)
-            mask = self.det_conv_mask(h)
+            mask, h, c = self.attention_step(input, mask, h, c)
             mask_list.append(mask)
         return mask_list
 
@@ -149,6 +158,16 @@ def attention_map(img: Image.Image) -> torch.Tensor:
     return F.pad(att, (0, w - w4, 0, h - h4))
 
 
+def _finish(rgb, w, h, w4, h4, out) -> Image.Image:
+    """The network's BGR output on the /4 crop -> an RGB image at the input's own size."""
+    out = out.clamp(0, 1)[:, [2, 1, 0]].cpu()  # BGR -> RGB
+    if (w4, h4) != (w, h):  # restore the cropped border from the input, so sizes match
+        full = torch.from_numpy(np.asarray(rgb, dtype=np.float32).transpose(2, 0, 1) / 255.0).unsqueeze(0)
+        full[:, :, :h4, :w4] = out
+        out = full
+    return Image.fromarray((out[0].permute(1, 2, 0).numpy() * 255 + 0.5).astype(np.uint8))
+
+
 @torch.no_grad()
 def derain(img: Image.Image, weights: Path = WEIGHTS) -> tuple[Image.Image, torch.Tensor]:
     """Returns (restored image, raindrop attention map [1,1,H,W] in [0,1]),
@@ -156,12 +175,24 @@ def derain(img: Image.Image, weights: Path = WEIGHTS) -> tuple[Image.Image, torc
     model = load(weights)
     rgb, w, h, w4, h4, x = _prep(img)
     masks, out = model(x.to(DEVICE))
-    out = out.clamp(0, 1)[:, [2, 1, 0]].cpu()  # BGR -> RGB
-    att = masks[-1].clamp(0, 1).cpu()
-    if (w4, h4) != (w, h):  # restore the cropped border from the input, so sizes match
-        full = torch.from_numpy(np.asarray(rgb, dtype=np.float32).transpose(2, 0, 1) / 255.0).unsqueeze(0)
-        full[:, :, :h4, :w4] = out
-        out = full
-        att = F.pad(att, (0, w - w4, 0, h - h4))
-    out_img = Image.fromarray((out[0].permute(1, 2, 0).numpy() * 255 + 0.5).astype(np.uint8))
-    return out_img, att
+    att = F.pad(masks[-1].clamp(0, 1).cpu(), (0, w - w4, 0, h - h4))
+    return _finish(rgb, w, h, w4, h4, out), att
+
+
+@torch.no_grad()
+def derain_steps(img: Image.Image, weights: Path = WEIGHTS):
+    """derain() one step at a time, for the demo's step-by-step view. Yields
+    (seconds, attention map [1,1,H,W] in [0,1]) after each of the ITERATION
+    attention passes, then (seconds, restored image). Same result as derain()."""
+    model = load(weights)
+    rgb, w, h, w4, h4, x = _prep(img)
+    x = x.to(DEVICE)
+    mask, hid, c = model.attention_start(x)
+    for _ in range(ITERATION):
+        t = time.perf_counter()
+        mask, hid, c = model.attention_step(x, mask, hid, c)
+        att = F.pad(mask.clamp(0, 1).cpu(), (0, w - w4, 0, h - h4))
+        yield time.perf_counter() - t, att
+    t = time.perf_counter()
+    out = model.restore(x, mask)
+    yield time.perf_counter() - t, _finish(rgb, w, h, w4, h4, out)

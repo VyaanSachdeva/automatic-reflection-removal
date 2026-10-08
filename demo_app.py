@@ -264,13 +264,38 @@ MODES = [
 RAINDROP_MODE, LAMA_MODE, RAINDROP_LEARNED_MODE, STOCK_MODE, GT_MODE = MODES
 # Our model, trained on VRGS. Offered once its weights exist. Its raindrop detector feeds LaMa; its own
 # token inpainter (one hour from scratch) is shown too, but still fills marked areas with flat grey.
-TRAINED_MODE = "Our VRGS-trained raindrop detector + LaMa fill"
+TRAINED_MODE = "Experimental: our VRGS-trained raindrop detector + LaMa fill (not yet good on real photos)"
 TRAINED_FULL_MODE = "Our VRGS-trained detector + its own inpainter (needs more training)"
-# The modes the demo offers: ours, the two repair steps on DeRaindrop's detector, and the stock baseline.
-# The others (released inpainter, correct mask, our unfinished inpainter) stay available in code as diagnostics.
+# Ours: DeRaindrop fine-tuned on VRGS rain, the same model as "Ours" on the results tab. It restores what's behind
+# the water instead of painting over it, so it runs as its own steps: four attention passes, then the restoration.
+OURS_MODE = "Ours: DeRaindrop fine-tuned on VRGS rain (finds the rain, then restores what's behind it)"
+OURS_STAGES = [f"Find the rain: attention pass {i + 1} of {derainnet.ITERATION}" for i in range(derainnet.ITERATION)]
+OURS_STAGES.append("Restore the scene behind the water")
+# The modes the demo offers: ours, our experimental detector, a repair pipeline on DeRaindrop's detector, and the
+# stock baseline. The others (LaMa on DeRaindrop's detector, released inpainter, correct mask, our unfinished
+# inpainter) stay available in code as diagnostics.
 SHOWN_MODES = [RAINDROP_MODE, STOCK_MODE]
 if model_stages.TRAINED_WEIGHTS.exists():
     SHOWN_MODES = [TRAINED_MODE] + SHOWN_MODES
+if derainnet.FINETUNED.exists():
+    SHOWN_MODES = [OURS_MODE] + SHOWN_MODES
+
+
+def stage_names(mode: str) -> list[str]:
+    return OURS_STAGES if mode == OURS_MODE else model_stages.STAGES
+
+
+def _ours_stages(img: Image.Image):
+    """derainnet.derain_steps in run_stages' (step, seconds, image, note) form."""
+    for i, (secs, out) in enumerate(derainnet.derain_steps(img, derainnet.FINETUNED)):
+        if i < derainnet.ITERATION:
+            note = (f"Where the network thinks the water is (brighter = more likely); "
+                    f"{100 * (out > 0.2).float().mean().item():.0f}% of pixels above 0.2")
+            if i == 0:
+                note += ". Each pass refines the previous one"
+            yield i, secs, model_stages._heatmap(out), note
+        else:
+            yield i, secs, out, "Restored image: it uses the final raindrop map to recover the scene behind the water"
 
 
 def _find_clean(img: Image.Image):
@@ -297,15 +322,16 @@ def watch_model(img: Image.Image, mode: str):
     composite = mode != STOCK_MODE
     detector = "deraindrop" if mode in (RAINDROP_MODE, RAINDROP_LEARNED_MODE) else "highlight"
     fill = "neighbours" if mode in (RAINDROP_MODE, GT_MODE) else "learned"
-    n = len(model_stages.STAGES)
+    names = stage_names(mode)
+    n = len(names)
     images, notes, times = [None] * n, [""] * n, [None] * n
-    lama, trained, full = mode == LAMA_MODE, mode == TRAINED_MODE, mode == TRAINED_FULL_MODE
+    lama, trained, full, ours = mode == LAMA_MODE, mode == TRAINED_MODE, mode == TRAINED_FULL_MODE, mode == OURS_MODE
     loaded = model_stages._trained if (trained or full) else model_stages._wrapper
-    prefix = "" if lama or loaded is not None else "Loading the model (first run only, about 30 seconds)...\n\n"
+    prefix = "" if lama or ours or loaded is not None else "Loading the model (first run only, about 30 seconds)...\n\n"
 
     def table(running: int) -> str:
         rows = []
-        for i, name in enumerate(model_stages.STAGES):
+        for i, name in enumerate(names):
             if times[i] is not None:
                 status = f"done in {times[i]:.1f}s"
             elif i == running:
@@ -317,10 +343,20 @@ def watch_model(img: Image.Image, mode: str):
         footer = ""
         if all(t is not None for t in times):
             footer = f"\n\n**Total: {total:.1f}s** on this laptop's {model_stages.DEVICE.type.upper()}."
+            if clean is not None:
+                (ip, is_), (op, os_) = _scores(img, clean), _scores(images[-1], clean)
+                verdict = "better" if op > ip and os_ > is_ else "worse" if op < ip and os_ < is_ else "mixed"
+                footer += (f"\n\n**Against the clean photo:** rainy {ip:.2f} dB / SSIM {is_:.3f} → "
+                           f"output {op:.2f} dB / SSIM {os_:.3f} (**{verdict}** than leaving it alone)")
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
-    yield [table(0)] + images
-    if lama:
+    def shown():
+        return [gr.update(value=im, label=name) for im, name in zip(images, names)]
+
+    yield [table(0)] + shown()
+    if ours:
+        stages = _ours_stages(img)
+    elif lama:
         stages = model_stages.run_lama_stages(img)
     elif trained:
         stages = model_stages.run_lama_stages(img, detector="trained")
@@ -332,10 +368,10 @@ def watch_model(img: Image.Image, mode: str):
     for i, secs, im, note in stages:
         if i == -1:
             prefix = f"Model loaded in {secs:.0f}s.\n\n"
-            yield [table(0)] + images
+            yield [table(0)] + shown()
             continue
         times[i], notes[i], images[i] = secs, note, im
-        yield [table(i + 1)] + images
+        yield [table(i + 1)] + shown()
 
 
 HEADER = """
@@ -401,10 +437,10 @@ with gr.Blocks() as demo:
                 watch_in = gr.Image(value=FEATURED_IMAGE, type="pil", label="Rainy image")
                 watch_mode = gr.Radio(
                     SHOWN_MODES, value=SHOWN_MODES[0], label="How to find and repair the rain",
-                    info="Ours finds the rain with a detector trained on VRGS; the others use DeRaindrop's raindrop "
-                         "detector. LaMa paints the marked pixels directly at full resolution; neighbour fill rebuilds "
-                         "marked patches from the clean ones around them. The stock model looks for bright highlights, "
-                         "not rain.",
+                    info="Ours is DeRaindrop fine-tuned on VRGS rain, the same model as \"Ours\" on the results tab: "
+                         "it finds the rain, then restores what's behind it. The experimental mode uses our own "
+                         "detector trained on VRGS. Neighbour fill rebuilds marked patches from the clean ones around "
+                         "them. The stock model looks for bright highlights, not rain.",
                 )
                 watch_btn = gr.Button("Run step by step", variant="primary")
             with gr.Column(scale=2):
@@ -415,13 +451,17 @@ with gr.Blocks() as demo:
             label="Real rainy photos (DeRaindrop)",
         )
         stage_imgs = []
+        first_names = stage_names(SHOWN_MODES[0])
         with gr.Row():
-            for name in model_stages.STAGES[:3]:
+            for name in first_names[:3]:
                 stage_imgs.append(gr.Image(type="pil", label=name, interactive=False))
         with gr.Row():
-            for name in model_stages.STAGES[3:]:
+            for name in first_names[3:]:
                 stage_imgs.append(gr.Image(type="pil", label=name, interactive=False))
         watch_btn.click(watch_model, [watch_in, watch_mode], [watch_status] + stage_imgs)
+        # Switching mode relabels the stage images and clears the previous run.
+        watch_mode.change(lambda m: [""] + [gr.update(value=None, label=nm) for nm in stage_names(m)],
+                          watch_mode, [watch_status] + stage_imgs)
         send_btn.click(lambda im: im, rain_out, watch_in)
 
     with gr.Tab("Remove rain: results"):
