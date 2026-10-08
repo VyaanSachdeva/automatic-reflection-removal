@@ -85,7 +85,7 @@ def _load_examples() -> dict:
         if not (out_path.exists() and gt_path.exists()):
             continue
         rainy, out, gt = Image.open(path), Image.open(out_path), Image.open(gt_path)
-        e = {"rainy": rainy, "out": out, "gt": gt,
+        e = {"stem": path.stem, "rainy": rainy, "out": out, "gt": gt,
              "rainy_scores": _scores(rainy, gt), "out_scores": _scores(out, gt)}
         for key, folder in OPTIONAL_OUTPUTS.items():
             p = ASSETS / folder / path.name
@@ -116,6 +116,13 @@ ROW_LABELS = {
 
 
 EXAMPLES = _load_examples()
+
+# The photo every tab opens with: photo 12, where ours (DeRaindrop fine-tuned on VRGS) gains the most SSIM of the
+# 8 examples (0.810 -> 0.920, +6.5 dB). DEMO_PHOTO picks another one by its file name.
+FEATURED_STEM = os.environ.get("DEMO_PHOTO", "12")
+FEATURED_PATH = ASSETS / "rainy" / f"{FEATURED_STEM}.png"
+FEATURED_NAME = next((n for n, e in EXAMPLES.items() if e["stem"] == FEATURED_STEM), next(iter(EXAMPLES), None))
+FEATURED_IMAGE = str(FEATURED_PATH) if FEATURED_PATH.exists() else None
 
 
 def _summary_md() -> str:
@@ -391,7 +398,7 @@ with gr.Blocks() as demo:
         )
         with gr.Row():
             with gr.Column(scale=1):
-                watch_in = gr.Image(type="pil", label="Rainy image")
+                watch_in = gr.Image(value=FEATURED_IMAGE, type="pil", label="Rainy image")
                 watch_mode = gr.Radio(
                     SHOWN_MODES, value=SHOWN_MODES[0], label="How to find and repair the rain",
                     info="Ours finds the rain with a detector trained on VRGS; the others use DeRaindrop's raindrop "
@@ -424,7 +431,7 @@ with gr.Blocks() as demo:
         )
         gr.Markdown(_summary_md())
         names = list(EXAMPLES)
-        pick = gr.Dropdown(names, value=names[0] if names else None, label="Real rainy test photo")
+        pick = gr.Dropdown(names, value=FEATURED_NAME, label="Real rainy test photo")
         with gr.Row():
             rainy_img = gr.Image(type="pil", label="Rainy input")
             ours_img = gr.Image(type="pil", label="Ours: DeRaindrop fine-tuned on VRGS rain")
@@ -440,7 +447,7 @@ with gr.Blocks() as demo:
             demo.load(show_example, pick, example_outputs)
 
         with gr.Accordion("Try your own rainy image", open=False):
-            live_in = gr.Image(type="pil", label="Rainy image")
+            live_in = gr.Image(value=FEATURED_IMAGE, type="pil", label="Rainy image")
             live_drn_ver = gr.Radio(DRN_CHOICES, value=DRN_CHOICES[0], label="DeRaindrop version")
             with gr.Row():
                 live_drn_out = gr.Image(type="pil", label="DeRaindrop output")
