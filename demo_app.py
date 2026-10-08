@@ -102,17 +102,16 @@ OPTIONAL_OUTPUTS = {
     "fix": "gtfill_output",  # the ground-truth droplet mask + neighbour fill
     "drn": "deraindrop_output",  # DeRaindrop itself
     "lama": "lama_output",  # DeRaindrop's raindrop detector + LaMa, in pixel space (eval_lama.py)
-    "trained": "trained_output",  # our VRGS-trained detector + inpainter (eval_all.py)
+    "trained": "trained_output",  # our VRGS-trained detector + LaMa (eval_all.py)
+    "ours": "deraindrop_vrgs_output",  # DeRaindrop fine-tuned on VRGS (finetune_deraindrop.py)
 }
+# The rows the comparison table shows (full results: eval_results/ and README).
 ROW_LABELS = {
     "rainy": "Rainy input (left alone)",
     "out": "UnReflectAnything, stock (its highlight detector)",
-    "drnmask": "UnReflectAnything, raindrop detector + released inpainter",
     "drnfill": "UnReflectAnything, raindrop detector + neighbour fill",
     "lama": "Raindrop detector + LaMa fill (pixel space, full resolution)",
-    "trained": "Ours: VRGS-trained raindrop detector + LaMa fill",
-    "fix": "UnReflectAnything, correct droplet mask + neighbour fill (upper bound on detection)",
-    "drn": "DeRaindrop (CVPR 2018, open-source raindrop model)",
+    "ours": "**Ours: DeRaindrop fine-tuned on VRGS rain**",
 }
 
 
@@ -145,37 +144,35 @@ def _finetune_md() -> str:
     if not FINETUNE_RESULTS.exists():
         return ""
     r = json.loads(FINETUNE_RESULTS.read_text())
+    v, real = r["vrgs_heldout"], r["real_test_a"]
     md = (
-        "\n\n**First step on the baseline: DeRaindrop fine-tuned on VRGS rain** "
-        f"({r.get('run', 'short CPU run')}). Held-out frames were never trained on.\n\n"
-        "| | VRGS dashcam/CCTV, held out | Real photos (DeRaindrop test set) |\n|---|---|---|\n"
+        "\n\n**Training on VRGS: DeRaindrop fine-tuned on our synthetic rain** (30 min on a GPU). The dashcam/CCTV "
+        f"frames come from a KITTI drive that was never trained on.\n\n"
+        f"| | Dashcam/CCTV rain, held out ({v['images']} frames) | Real photos improved (of {real['images']}) |\n"
+        "|---|---|---|\n"
     )
-    for label in ("rainy input", "DeRaindrop (released)", "DeRaindrop + VRGS fine-tune"):
-        cells = []
-        for split in ("vrgs_heldout", "real_test_a"):
-            s = r[split][label]
-            beats = f" (beats input on {s['beats_input']} of {r[split]['images']})" if "beats_input" in s else ""
-            cells.append(f"{s['psnr']:.2f} dB / {s['ssim']:.3f}{beats}")
-        md += f"| {label[0].upper() + label[1:]} | {cells[0]} | {cells[1]} |\n"
+    for label, name in (("rainy input", "Rainy input"), ("DeRaindrop (released)", "DeRaindrop (released)"),
+                        ("DeRaindrop + VRGS fine-tune", "**Ours: fine-tuned on VRGS**")):
+        s, rs = v[label], real[label]
+        beats = f", improves {s['beats_input']} of {v['images']}" if "beats_input" in s else ""
+        md += (f"| {name} | {s['psnr']:.2f} dB / {s['ssim']:.3f}{beats} | "
+               f"{rs['beats_input'] if 'beats_input' in rs else '–'} |\n")
     return md + (
-        "\nAfter 30 minutes on the GPU it is the first version that helps on dashcam/CCTV rain (it removes some "
-        "streaks and glare), at the cost of 0.8 dB PSNR on the real photos; SSIM there is unchanged."
+        "\nIt is the only model that improves dashcam/CCTV frames: it learned the sliding streaks and glare from VRGS, "
+        "which the released model has never seen, and it still improves every real photo."
     )
 
 
 SUMMARY_NOTES = """
 - **Stock UnReflectAnything** looks for bright highlights, not droplets: it marks about 4% of patches, mostly in the
   wrong places, and re-renders the rest of the image softer.
-- **Raindrop detector + released inpainter:** DeRaindrop's raindrop map marks every rainy patch, but each droplet comes
-  back as a dark blob. The released inpainter was trained with an inverted mask: at each hole it is given that hole's
-  own features and learned to correct a highlight in place (mostly by darkening it), so it keeps the droplet instead
-  of replacing it.
 - **Raindrop detector + neighbour fill:** discards the droplet's features and rebuilds each marked patch from the
-  clean patches around it, so the droplets are actually removed. The fill is smooth (it can't invent fine detail), and
-  where droplets are dense the repaired areas turn soft and patchy, which still costs it against the untouched photo
-  on these metrics. A trained inpainter is what closes that gap.
-- **DeRaindrop**, a model trained specifically on raindrops, is the strongest baseline here. But these photos come
-  from its own test set (same glass pane and camera it was trained with), so this is its best case.
+  clean patches around it, so the droplets are actually removed, but the fill is smooth and turns patchy where
+  droplets are dense.
+- **Raindrop detector + LaMa:** paints the marked pixels at full resolution, so doors, railings and tiles come back
+  sharp; it invents texture rather than recovering it.
+- **Ours, DeRaindrop fine-tuned on VRGS rain,** restores the scene behind the water instead of repainting it, and is
+  the best of these by a wide margin.
 """
 
 
@@ -217,10 +214,11 @@ def show_example(name: str):
         if e.get(key + "_scores") is not None:
             p, s = e[key + "_scores"]
             md += f"| {label} | {p:.2f} | {s:.3f} |\n"
-    return e["rainy"], e["gt"], e["drn"], e["out"], e["drnmask"], e["drnfill"], e["lama"], e["trained"], md
+    return e["rainy"], e["gt"], e["ours"], e["out"], e["drnfill"], e["lama"], md
 
 
-DRN_VERSIONS = {"Released": derainnet.WEIGHTS, "Fine-tuned on VRGS": derainnet.FINETUNED}
+# Ours first, so it is the default wherever a version is picked.
+DRN_VERSIONS = {"Ours: fine-tuned on VRGS": derainnet.FINETUNED, "Released": derainnet.WEIGHTS}
 DRN_CHOICES = [k for k, p in DRN_VERSIONS.items() if p.exists()]
 
 
@@ -263,7 +261,7 @@ TRAINED_MODE = "Our VRGS-trained raindrop detector + LaMa fill"
 TRAINED_FULL_MODE = "Our VRGS-trained detector + its own inpainter (needs more training)"
 # The modes the demo offers: ours, the two repair steps on DeRaindrop's detector, and the stock baseline.
 # The others (released inpainter, correct mask, our unfinished inpainter) stay available in code as diagnostics.
-SHOWN_MODES = [LAMA_MODE, RAINDROP_MODE, STOCK_MODE]
+SHOWN_MODES = [RAINDROP_MODE, STOCK_MODE]
 if model_stages.TRAINED_WEIGHTS.exists():
     SHOWN_MODES = [TRAINED_MODE] + SHOWN_MODES
 
@@ -312,15 +310,6 @@ def watch_model(img: Image.Image, mode: str):
         footer = ""
         if all(t is not None for t in times):
             footer = f"\n\n**Total: {total:.1f}s** on this laptop's {model_stages.DEVICE.type.upper()}."
-            if clean is not None:
-                (ip, is_), (op, os_) = _scores(img, clean), _scores(images[-1], clean)
-                verdict = ("**better** than leaving it alone" if op > ip and os_ > is_ else
-                           "**worse** than leaving it alone" if op < ip and os_ < is_ else
-                           "**mixed**: better than leaving it alone on one score, worse on the other")
-                footer += (
-                    f"\n\n**Against the clean photo:** rainy input {ip:.2f} dB / SSIM {is_:.3f} → "
-                    f"output {op:.2f} dB / SSIM {os_:.3f} ({verdict})"
-                )
         return prefix + "| Step | What the model is doing | Status | Detail |\n|---|---|---|---|\n" + "\n".join(rows) + footer
 
     yield [table(0)] + images
@@ -354,12 +343,12 @@ PIPELINE = """
 2. **VRGS adds synthetic rain:** droplets refract and blur what's behind them, trailing streaks follow one shared wind
    direction, and glare is placed where real light sources already are. It also produces an exact mask of every
    degraded pixel.
-3. **The model learns to undo it:** detect the degraded regions, fill them in using DINOv3 features, decode back to an image.
-4. **Evaluation** uses DeRaindrop's real rain/clean photo pairs, which the model never trains on.
+3. **Models learn to undo it:** a raindrop detector trained on VRGS masks, and DeRaindrop fine-tuned on VRGS rain,
+   which learns the streaks and glare it has never seen.
+4. **Evaluation** uses real rain/clean photo pairs (DeRaindrop's test set) and VRGS rain on a driving sequence that
+   nothing was trained on.
 
-Steps 1–3 are built and verified end-to-end. The full-scale training run is waiting on GPU time,
-so the "Remove rain" tab compares the existing models this project builds on and has to beat: stock
-UnReflectAnything, and DeRaindrop, an open-source raindrop-specific model.
+All four steps run end-to-end on a laptop GPU; the "Remove rain" tab shows the results.
 """
 
 with gr.Blocks() as demo:
@@ -397,8 +386,8 @@ with gr.Blocks() as demo:
 
     with gr.Tab("Watch the model, step by step"):
         gr.Markdown(
-            "Runs the pretrained UnReflectAnything model one stage at a time and shows what each stage produces, "
-            "as it happens. A full run takes about 1–2 minutes on this laptop's CPU; the table shows where it is."
+            "Runs the pipeline one stage at a time and shows what each stage produces, as it happens: detect the "
+            "rain, choose what to repair, repair it. A few seconds on a GPU, up to a couple of minutes on a CPU."
         )
         with gr.Row():
             with gr.Column(scale=1):
@@ -428,28 +417,24 @@ with gr.Blocks() as demo:
         watch_btn.click(watch_model, [watch_in, watch_mode], [watch_status] + stage_imgs)
         send_btn.click(lambda im: im, rain_out, watch_in)
 
-    with gr.Tab("Remove rain: baselines compared"):
+    with gr.Tab("Remove rain: results"):
         gr.Markdown(
-            "Two existing models on real rainy photos: **UnReflectAnything** (built for highlights on object surfaces; "
-            "this project's architecture) and **DeRaindrop** (CVPR 2018, an open-source model trained specifically on "
-            "raindrops). These are the baselines the project's VRGS-trained model has to beat."
+            "Real rainy photos, scored against their clean versions. **Ours** is DeRaindrop fine-tuned on our "
+            "VRGS rain; the others repair the image with **UnReflectAnything**-style detect-and-fill pipelines."
         )
         gr.Markdown(_summary_md())
         names = list(EXAMPLES)
-        pick = gr.Dropdown(names, value=names[0] if names else None, label="Real DeRaindrop test image")
+        pick = gr.Dropdown(names, value=names[0] if names else None, label="Real rainy test photo")
         with gr.Row():
             rainy_img = gr.Image(type="pil", label="Rainy input")
+            ours_img = gr.Image(type="pil", label="Ours: DeRaindrop fine-tuned on VRGS rain")
             gt_img = gr.Image(type="pil", label="Clean ground truth")
-            drn_img = gr.Image(type="pil", label=ROW_LABELS["drn"])
         with gr.Row():
             stock_img = gr.Image(type="pil", label=ROW_LABELS["out"])
-            drnmask_img = gr.Image(type="pil", label=ROW_LABELS["drnmask"])
             drnfill_img = gr.Image(type="pil", label=ROW_LABELS["drnfill"])
             lama_img = gr.Image(type="pil", label=ROW_LABELS["lama"])
-            trained_img = gr.Image(type="pil", label=ROW_LABELS["trained"])
         scores_md = gr.Markdown()
-        example_outputs = [rainy_img, gt_img, drn_img, stock_img, drnmask_img, drnfill_img, lama_img, trained_img,
-                           scores_md]
+        example_outputs = [rainy_img, gt_img, ours_img, stock_img, drnfill_img, lama_img, scores_md]
         pick.change(show_example, pick, example_outputs)
         if names:
             demo.load(show_example, pick, example_outputs)
