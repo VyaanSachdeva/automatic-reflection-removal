@@ -1,0 +1,1132 @@
+{
+ "real_test_a": {
+  "images": 58,
+  "rainy input": {
+   "psnr": 23.81,
+   "ssim": 0.847
+  },
+  "ours, whole frame": {
+   "psnr": 30.11,
+   "ssim": 0.912,
+   "beats_input": 58
+  },
+  "segment & repair, instances": {
+   "psnr": 28.06,
+   "ssim": 0.888,
+   "beats_input": 58,
+   "beats_whole_frame_psnr": 5,
+   "beats_whole_frame_ssim": 0
+  },
+  "segment & repair, hybrid": {
+   "psnr": 30.08,
+   "ssim": 0.912,
+   "beats_input": 58,
+   "beats_whole_frame_psnr": 12,
+   "beats_whole_frame_ssim": 0
+  }
+ },
+ "photos": [
+  {
+   "photo": "0_rain.png",
+   "rainy input": {
+    "psnr": 25.474,
+    "ssim": 0.8958
+   },
+   "ours, whole frame": {
+    "psnr": 31.508,
+    "ssim": 0.9447
+   },
+   "segment & repair, instances": {
+    "psnr": 26.469,
+    "ssim": 0.9019
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.508,
+    "ssim": 0.9447
+   }
+  },
+  {
+   "photo": "1_rain.png",
+   "rainy input": {
+    "psnr": 21.843,
+    "ssim": 0.831
+   },
+   "ours, whole frame": {
+    "psnr": 29.395,
+    "ssim": 0.9076
+   },
+   "segment & repair, instances": {
+    "psnr": 27.828,
+    "ssim": 0.8816
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.396,
+    "ssim": 0.9075
+   }
+  },
+  {
+   "photo": "2_rain.png",
+   "rainy input": {
+    "psnr": 21.22,
+    "ssim": 0.8306
+   },
+   "ours, whole frame": {
+    "psnr": 28.163,
+    "ssim": 0.9124
+   },
+   "segment & repair, instances": {
+    "psnr": 25.317,
+    "ssim": 0.8782
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.202,
+    "ssim": 0.9119
+   }
+  },
+  {
+   "photo": "3_rain.png",
+   "rainy input": {
+    "psnr": 17.921,
+    "ssim": 0.8068
+   },
+   "ours, whole frame": {
+    "psnr": 30.987,
+    "ssim": 0.9007
+   },
+   "segment & repair, instances": {
+    "psnr": 29.344,
+    "ssim": 0.8859
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.987,
+    "ssim": 0.9006
+   }
+  },
+  {
+   "photo": "4_rain.png",
+   "rainy input": {
+    "psnr": 24.651,
+    "ssim": 0.8312
+   },
+   "ours, whole frame": {
+    "psnr": 32.83,
+    "ssim": 0.9176
+   },
+   "segment & repair, instances": {
+    "psnr": 28.703,
+    "ssim": 0.8778
+   },
+   "segment & repair, hybrid": {
+    "psnr": 32.83,
+    "ssim": 0.9176
+   }
+  },
+  {
+   "photo": "5_rain.png",
+   "rainy input": {
+    "psnr": 30.139,
+    "ssim": 0.9255
+   },
+   "ours, whole frame": {
+    "psnr": 31.11,
+    "ssim": 0.9324
+   },
+   "segment & repair, instances": {
+    "psnr": 30.313,
+    "ssim": 0.9268
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.11,
+    "ssim": 0.9324
+   }
+  },
+  {
+   "photo": "6_rain.png",
+   "rainy input": {
+    "psnr": 25.996,
+    "ssim": 0.8346
+   },
+   "ours, whole frame": {
+    "psnr": 31.775,
+    "ssim": 0.9033
+   },
+   "segment & repair, instances": {
+    "psnr": 27.897,
+    "ssim": 0.8557
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.386,
+    "ssim": 0.9022
+   }
+  },
+  {
+   "photo": "7_rain.png",
+   "rainy input": {
+    "psnr": 23.149,
+    "ssim": 0.8217
+   },
+   "ours, whole frame": {
+    "psnr": 30.17,
+    "ssim": 0.8863
+   },
+   "segment & repair, instances": {
+    "psnr": 26.475,
+    "ssim": 0.8573
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.17,
+    "ssim": 0.8863
+   }
+  },
+  {
+   "photo": "8_rain.png",
+   "rainy input": {
+    "psnr": 22.464,
+    "ssim": 0.832
+   },
+   "ours, whole frame": {
+    "psnr": 29.297,
+    "ssim": 0.9061
+   },
+   "segment & repair, instances": {
+    "psnr": 27.082,
+    "ssim": 0.8825
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.296,
+    "ssim": 0.9061
+   }
+  },
+  {
+   "photo": "9_rain.png",
+   "rainy input": {
+    "psnr": 24.657,
+    "ssim": 0.8263
+   },
+   "ours, whole frame": {
+    "psnr": 29.669,
+    "ssim": 0.9142
+   },
+   "segment & repair, instances": {
+    "psnr": 28.354,
+    "ssim": 0.8821
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.669,
+    "ssim": 0.9142
+   }
+  },
+  {
+   "photo": "10_rain.png",
+   "rainy input": {
+    "psnr": 25.524,
+    "ssim": 0.9282
+   },
+   "ours, whole frame": {
+    "psnr": 32.179,
+    "ssim": 0.9549
+   },
+   "segment & repair, instances": {
+    "psnr": 26.672,
+    "ssim": 0.9352
+   },
+   "segment & repair, hybrid": {
+    "psnr": 32.179,
+    "ssim": 0.9549
+   }
+  },
+  {
+   "photo": "11_rain.png",
+   "rainy input": {
+    "psnr": 23.106,
+    "ssim": 0.8946
+   },
+   "ours, whole frame": {
+    "psnr": 29.321,
+    "ssim": 0.9341
+   },
+   "segment & repair, instances": {
+    "psnr": 28.054,
+    "ssim": 0.916
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.339,
+    "ssim": 0.9337
+   }
+  },
+  {
+   "photo": "12_rain.png",
+   "rainy input": {
+    "psnr": 22.33,
+    "ssim": 0.81
+   },
+   "ours, whole frame": {
+    "psnr": 28.782,
+    "ssim": 0.9199
+   },
+   "segment & repair, instances": {
+    "psnr": 29.193,
+    "ssim": 0.8942
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.75,
+    "ssim": 0.9197
+   }
+  },
+  {
+   "photo": "13_rain.png",
+   "rainy input": {
+    "psnr": 26.601,
+    "ssim": 0.9021
+   },
+   "ours, whole frame": {
+    "psnr": 31.0,
+    "ssim": 0.9259
+   },
+   "segment & repair, instances": {
+    "psnr": 27.874,
+    "ssim": 0.9099
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.005,
+    "ssim": 0.9259
+   }
+  },
+  {
+   "photo": "14_rain.png",
+   "rainy input": {
+    "psnr": 21.944,
+    "ssim": 0.8537
+   },
+   "ours, whole frame": {
+    "psnr": 29.863,
+    "ssim": 0.9061
+   },
+   "segment & repair, instances": {
+    "psnr": 27.871,
+    "ssim": 0.8968
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.88,
+    "ssim": 0.906
+   }
+  },
+  {
+   "photo": "15_rain.png",
+   "rainy input": {
+    "psnr": 22.412,
+    "ssim": 0.8182
+   },
+   "ours, whole frame": {
+    "psnr": 30.24,
+    "ssim": 0.8882
+   },
+   "segment & repair, instances": {
+    "psnr": 25.756,
+    "ssim": 0.8495
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.212,
+    "ssim": 0.8881
+   }
+  },
+  {
+   "photo": "16_rain.png",
+   "rainy input": {
+    "psnr": 22.46,
+    "ssim": 0.7524
+   },
+   "ours, whole frame": {
+    "psnr": 29.662,
+    "ssim": 0.8502
+   },
+   "segment & repair, instances": {
+    "psnr": 27.942,
+    "ssim": 0.8291
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.432,
+    "ssim": 0.8482
+   }
+  },
+  {
+   "photo": "17_rain.png",
+   "rainy input": {
+    "psnr": 22.966,
+    "ssim": 0.8718
+   },
+   "ours, whole frame": {
+    "psnr": 29.214,
+    "ssim": 0.9227
+   },
+   "segment & repair, instances": {
+    "psnr": 26.708,
+    "ssim": 0.8937
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.218,
+    "ssim": 0.9225
+   }
+  },
+  {
+   "photo": "18_rain.png",
+   "rainy input": {
+    "psnr": 22.847,
+    "ssim": 0.7802
+   },
+   "ours, whole frame": {
+    "psnr": 29.991,
+    "ssim": 0.8965
+   },
+   "segment & repair, instances": {
+    "psnr": 31.061,
+    "ssim": 0.8841
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.992,
+    "ssim": 0.8965
+   }
+  },
+  {
+   "photo": "19_rain.png",
+   "rainy input": {
+    "psnr": 24.217,
+    "ssim": 0.7886
+   },
+   "ours, whole frame": {
+    "psnr": 29.963,
+    "ssim": 0.8754
+   },
+   "segment & repair, instances": {
+    "psnr": 27.996,
+    "ssim": 0.8383
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.963,
+    "ssim": 0.8754
+   }
+  },
+  {
+   "photo": "20_rain.png",
+   "rainy input": {
+    "psnr": 24.464,
+    "ssim": 0.8767
+   },
+   "ours, whole frame": {
+    "psnr": 29.729,
+    "ssim": 0.9186
+   },
+   "segment & repair, instances": {
+    "psnr": 26.413,
+    "ssim": 0.8926
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.699,
+    "ssim": 0.918
+   }
+  },
+  {
+   "photo": "21_rain.png",
+   "rainy input": {
+    "psnr": 23.575,
+    "ssim": 0.8235
+   },
+   "ours, whole frame": {
+    "psnr": 28.784,
+    "ssim": 0.8989
+   },
+   "segment & repair, instances": {
+    "psnr": 27.283,
+    "ssim": 0.8794
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.776,
+    "ssim": 0.8988
+   }
+  },
+  {
+   "photo": "22_rain.png",
+   "rainy input": {
+    "psnr": 23.226,
+    "ssim": 0.8594
+   },
+   "ours, whole frame": {
+    "psnr": 30.858,
+    "ssim": 0.9118
+   },
+   "segment & repair, instances": {
+    "psnr": 28.19,
+    "ssim": 0.8941
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.853,
+    "ssim": 0.9118
+   }
+  },
+  {
+   "photo": "23_rain.png",
+   "rainy input": {
+    "psnr": 24.717,
+    "ssim": 0.8742
+   },
+   "ours, whole frame": {
+    "psnr": 31.893,
+    "ssim": 0.9191
+   },
+   "segment & repair, instances": {
+    "psnr": 29.431,
+    "ssim": 0.9023
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.595,
+    "ssim": 0.9185
+   }
+  },
+  {
+   "photo": "24_rain.png",
+   "rainy input": {
+    "psnr": 23.24,
+    "ssim": 0.8612
+   },
+   "ours, whole frame": {
+    "psnr": 29.819,
+    "ssim": 0.9121
+   },
+   "segment & repair, instances": {
+    "psnr": 28.014,
+    "ssim": 0.8954
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.817,
+    "ssim": 0.9121
+   }
+  },
+  {
+   "photo": "25_rain.png",
+   "rainy input": {
+    "psnr": 22.988,
+    "ssim": 0.8
+   },
+   "ours, whole frame": {
+    "psnr": 29.84,
+    "ssim": 0.8853
+   },
+   "segment & repair, instances": {
+    "psnr": 28.787,
+    "ssim": 0.87
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.664,
+    "ssim": 0.8843
+   }
+  },
+  {
+   "photo": "26_rain.png",
+   "rainy input": {
+    "psnr": 22.146,
+    "ssim": 0.8492
+   },
+   "ours, whole frame": {
+    "psnr": 29.649,
+    "ssim": 0.9177
+   },
+   "segment & repair, instances": {
+    "psnr": 27.818,
+    "ssim": 0.8999
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.638,
+    "ssim": 0.9173
+   }
+  },
+  {
+   "photo": "27_rain.png",
+   "rainy input": {
+    "psnr": 21.427,
+    "ssim": 0.7854
+   },
+   "ours, whole frame": {
+    "psnr": 30.384,
+    "ssim": 0.9043
+   },
+   "segment & repair, instances": {
+    "psnr": 28.507,
+    "ssim": 0.8745
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.384,
+    "ssim": 0.9043
+   }
+  },
+  {
+   "photo": "28_rain.png",
+   "rainy input": {
+    "psnr": 25.732,
+    "ssim": 0.9049
+   },
+   "ours, whole frame": {
+    "psnr": 29.28,
+    "ssim": 0.9349
+   },
+   "segment & repair, instances": {
+    "psnr": 26.994,
+    "ssim": 0.9153
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.28,
+    "ssim": 0.9349
+   }
+  },
+  {
+   "photo": "29_rain.png",
+   "rainy input": {
+    "psnr": 22.913,
+    "ssim": 0.8569
+   },
+   "ours, whole frame": {
+    "psnr": 29.102,
+    "ssim": 0.9005
+   },
+   "segment & repair, instances": {
+    "psnr": 26.874,
+    "ssim": 0.8775
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.106,
+    "ssim": 0.9003
+   }
+  },
+  {
+   "photo": "30_rain.png",
+   "rainy input": {
+    "psnr": 21.889,
+    "ssim": 0.7899
+   },
+   "ours, whole frame": {
+    "psnr": 28.524,
+    "ssim": 0.9122
+   },
+   "segment & repair, instances": {
+    "psnr": 29.048,
+    "ssim": 0.8943
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.524,
+    "ssim": 0.9122
+   }
+  },
+  {
+   "photo": "31_rain.png",
+   "rainy input": {
+    "psnr": 25.015,
+    "ssim": 0.834
+   },
+   "ours, whole frame": {
+    "psnr": 30.476,
+    "ssim": 0.8893
+   },
+   "segment & repair, instances": {
+    "psnr": 27.639,
+    "ssim": 0.8571
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.475,
+    "ssim": 0.8893
+   }
+  },
+  {
+   "photo": "32_rain.png",
+   "rainy input": {
+    "psnr": 23.228,
+    "ssim": 0.8455
+   },
+   "ours, whole frame": {
+    "psnr": 30.536,
+    "ssim": 0.9235
+   },
+   "segment & repair, instances": {
+    "psnr": 28.805,
+    "ssim": 0.8969
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.442,
+    "ssim": 0.923
+   }
+  },
+  {
+   "photo": "33_rain.png",
+   "rainy input": {
+    "psnr": 25.082,
+    "ssim": 0.8803
+   },
+   "ours, whole frame": {
+    "psnr": 30.009,
+    "ssim": 0.9279
+   },
+   "segment & repair, instances": {
+    "psnr": 28.136,
+    "ssim": 0.9084
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.008,
+    "ssim": 0.9279
+   }
+  },
+  {
+   "photo": "34_rain.png",
+   "rainy input": {
+    "psnr": 29.856,
+    "ssim": 0.9306
+   },
+   "ours, whole frame": {
+    "psnr": 32.548,
+    "ssim": 0.9515
+   },
+   "segment & repair, instances": {
+    "psnr": 32.288,
+    "ssim": 0.9349
+   },
+   "segment & repair, hybrid": {
+    "psnr": 32.55,
+    "ssim": 0.9515
+   }
+  },
+  {
+   "photo": "35_rain.png",
+   "rainy input": {
+    "psnr": 28.063,
+    "ssim": 0.899
+   },
+   "ours, whole frame": {
+    "psnr": 34.029,
+    "ssim": 0.9292
+   },
+   "segment & repair, instances": {
+    "psnr": 29.952,
+    "ssim": 0.906
+   },
+   "segment & repair, hybrid": {
+    "psnr": 34.028,
+    "ssim": 0.9292
+   }
+  },
+  {
+   "photo": "36_rain.png",
+   "rainy input": {
+    "psnr": 21.411,
+    "ssim": 0.7896
+   },
+   "ours, whole frame": {
+    "psnr": 29.906,
+    "ssim": 0.8936
+   },
+   "segment & repair, instances": {
+    "psnr": 29.45,
+    "ssim": 0.8798
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.906,
+    "ssim": 0.8936
+   }
+  },
+  {
+   "photo": "37_rain.png",
+   "rainy input": {
+    "psnr": 21.707,
+    "ssim": 0.8289
+   },
+   "ours, whole frame": {
+    "psnr": 29.506,
+    "ssim": 0.9159
+   },
+   "segment & repair, instances": {
+    "psnr": 28.516,
+    "ssim": 0.8981
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.493,
+    "ssim": 0.9158
+   }
+  },
+  {
+   "photo": "38_rain.png",
+   "rainy input": {
+    "psnr": 20.323,
+    "ssim": 0.8451
+   },
+   "ours, whole frame": {
+    "psnr": 27.995,
+    "ssim": 0.9268
+   },
+   "segment & repair, instances": {
+    "psnr": 23.914,
+    "ssim": 0.8939
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.055,
+    "ssim": 0.9265
+   }
+  },
+  {
+   "photo": "39_rain.png",
+   "rainy input": {
+    "psnr": 27.416,
+    "ssim": 0.9236
+   },
+   "ours, whole frame": {
+    "psnr": 29.22,
+    "ssim": 0.9423
+   },
+   "segment & repair, instances": {
+    "psnr": 31.605,
+    "ssim": 0.9373
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.22,
+    "ssim": 0.9423
+   }
+  },
+  {
+   "photo": "40_rain.png",
+   "rainy input": {
+    "psnr": 26.523,
+    "ssim": 0.889
+   },
+   "ours, whole frame": {
+    "psnr": 29.136,
+    "ssim": 0.9236
+   },
+   "segment & repair, instances": {
+    "psnr": 29.154,
+    "ssim": 0.9053
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.136,
+    "ssim": 0.9236
+   }
+  },
+  {
+   "photo": "41_rain.png",
+   "rainy input": {
+    "psnr": 28.373,
+    "ssim": 0.9124
+   },
+   "ours, whole frame": {
+    "psnr": 33.028,
+    "ssim": 0.9401
+   },
+   "segment & repair, instances": {
+    "psnr": 29.459,
+    "ssim": 0.9173
+   },
+   "segment & repair, hybrid": {
+    "psnr": 33.011,
+    "ssim": 0.94
+   }
+  },
+  {
+   "photo": "42_rain.png",
+   "rainy input": {
+    "psnr": 23.305,
+    "ssim": 0.8209
+   },
+   "ours, whole frame": {
+    "psnr": 30.945,
+    "ssim": 0.9087
+   },
+   "segment & repair, instances": {
+    "psnr": 29.261,
+    "ssim": 0.8804
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.817,
+    "ssim": 0.9076
+   }
+  },
+  {
+   "photo": "43_rain.png",
+   "rainy input": {
+    "psnr": 23.217,
+    "ssim": 0.8183
+   },
+   "ours, whole frame": {
+    "psnr": 30.561,
+    "ssim": 0.9051
+   },
+   "segment & repair, instances": {
+    "psnr": 26.755,
+    "ssim": 0.8616
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.558,
+    "ssim": 0.9051
+   }
+  },
+  {
+   "photo": "44_rain.png",
+   "rainy input": {
+    "psnr": 23.99,
+    "ssim": 0.85
+   },
+   "ours, whole frame": {
+    "psnr": 31.756,
+    "ssim": 0.9148
+   },
+   "segment & repair, instances": {
+    "psnr": 30.594,
+    "ssim": 0.9024
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.749,
+    "ssim": 0.9148
+   }
+  },
+  {
+   "photo": "45_rain.png",
+   "rainy input": {
+    "psnr": 23.082,
+    "ssim": 0.8421
+   },
+   "ours, whole frame": {
+    "psnr": 29.307,
+    "ssim": 0.9002
+   },
+   "segment & repair, instances": {
+    "psnr": 27.193,
+    "ssim": 0.8844
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.21,
+    "ssim": 0.8997
+   }
+  },
+  {
+   "photo": "46_rain.png",
+   "rainy input": {
+    "psnr": 23.183,
+    "ssim": 0.8196
+   },
+   "ours, whole frame": {
+    "psnr": 28.846,
+    "ssim": 0.8967
+   },
+   "segment & repair, instances": {
+    "psnr": 25.621,
+    "ssim": 0.8445
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.865,
+    "ssim": 0.8967
+   }
+  },
+  {
+   "photo": "47_rain.png",
+   "rainy input": {
+    "psnr": 23.129,
+    "ssim": 0.8669
+   },
+   "ours, whole frame": {
+    "psnr": 30.077,
+    "ssim": 0.915
+   },
+   "segment & repair, instances": {
+    "psnr": 27.885,
+    "ssim": 0.9028
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.992,
+    "ssim": 0.9146
+   }
+  },
+  {
+   "photo": "48_rain.png",
+   "rainy input": {
+    "psnr": 23.535,
+    "ssim": 0.8047
+   },
+   "ours, whole frame": {
+    "psnr": 30.166,
+    "ssim": 0.8817
+   },
+   "segment & repair, instances": {
+    "psnr": 29.501,
+    "ssim": 0.8635
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.13,
+    "ssim": 0.8816
+   }
+  },
+  {
+   "photo": "49_rain.png",
+   "rainy input": {
+    "psnr": 26.272,
+    "ssim": 0.8984
+   },
+   "ours, whole frame": {
+    "psnr": 29.983,
+    "ssim": 0.9399
+   },
+   "segment & repair, instances": {
+    "psnr": 28.438,
+    "ssim": 0.9139
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.983,
+    "ssim": 0.9399
+   }
+  },
+  {
+   "photo": "50_rain.png",
+   "rainy input": {
+    "psnr": 22.9,
+    "ssim": 0.8423
+   },
+   "ours, whole frame": {
+    "psnr": 29.71,
+    "ssim": 0.9024
+   },
+   "segment & repair, instances": {
+    "psnr": 25.796,
+    "ssim": 0.8749
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.707,
+    "ssim": 0.9024
+   }
+  },
+  {
+   "photo": "51_rain.png",
+   "rainy input": {
+    "psnr": 21.737,
+    "ssim": 0.8406
+   },
+   "ours, whole frame": {
+    "psnr": 27.256,
+    "ssim": 0.9113
+   },
+   "segment & repair, instances": {
+    "psnr": 26.13,
+    "ssim": 0.8815
+   },
+   "segment & repair, hybrid": {
+    "psnr": 27.255,
+    "ssim": 0.9112
+   }
+  },
+  {
+   "photo": "52_rain.png",
+   "rainy input": {
+    "psnr": 22.616,
+    "ssim": 0.8251
+   },
+   "ours, whole frame": {
+    "psnr": 28.13,
+    "ssim": 0.8941
+   },
+   "segment & repair, instances": {
+    "psnr": 27.003,
+    "ssim": 0.8722
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.126,
+    "ssim": 0.8941
+   }
+  },
+  {
+   "photo": "53_rain.png",
+   "rainy input": {
+    "psnr": 21.641,
+    "ssim": 0.8117
+   },
+   "ours, whole frame": {
+    "psnr": 29.339,
+    "ssim": 0.9116
+   },
+   "segment & repair, instances": {
+    "psnr": 26.194,
+    "ssim": 0.8678
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.318,
+    "ssim": 0.9113
+   }
+  },
+  {
+   "photo": "54_rain.png",
+   "rainy input": {
+    "psnr": 23.028,
+    "ssim": 0.8281
+   },
+   "ours, whole frame": {
+    "psnr": 29.096,
+    "ssim": 0.9202
+   },
+   "segment & repair, instances": {
+    "psnr": 28.133,
+    "ssim": 0.8922
+   },
+   "segment & repair, hybrid": {
+    "psnr": 29.088,
+    "ssim": 0.9201
+   }
+  },
+  {
+   "photo": "55_rain.png",
+   "rainy input": {
+    "psnr": 21.231,
+    "ssim": 0.8365
+   },
+   "ours, whole frame": {
+    "psnr": 29.011,
+    "ssim": 0.9237
+   },
+   "segment & repair, instances": {
+    "psnr": 28.744,
+    "ssim": 0.909
+   },
+   "segment & repair, hybrid": {
+    "psnr": 28.932,
+    "ssim": 0.923
+   }
+  },
+  {
+   "photo": "56_rain.png",
+   "rainy input": {
+    "psnr": 26.61,
+    "ssim": 0.852
+   },
+   "ours, whole frame": {
+    "psnr": 30.778,
+    "ssim": 0.8908
+   },
+   "segment & repair, instances": {
+    "psnr": 27.424,
+    "ssim": 0.8574
+   },
+   "segment & repair, hybrid": {
+    "psnr": 30.778,
+    "ssim": 0.8908
+   }
+  },
+  {
+   "photo": "57_rain.png",
+   "rainy input": {
+    "psnr": 26.262,
+    "ssim": 0.8779
+   },
+   "ours, whole frame": {
+    "psnr": 31.774,
+    "ssim": 0.9077
+   },
+   "segment & repair, instances": {
+    "psnr": 29.729,
+    "ssim": 0.8948
+   },
+   "segment & repair, hybrid": {
+    "psnr": 31.777,
+    "ssim": 0.9077
+   }
+  }
+ ]
+}
