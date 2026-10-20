@@ -17,6 +17,10 @@ CPU) into DEMO_ASSETS/{stock,drnmask,drnfill,gtfill,deraindrop}_output;
 DeRaindrop is fast enough (~10 s) to also run live. Our own raindrop-trained
 model isn't shown yet -- it needs the GPU training run.
 
+"Segment & repair" runs segment_repair.py live: every glare, streak, raindrop
+and person/vehicle instance found by pretrained models, each repaired by the
+model that suits it, with no training for this pipeline.
+
 Run:  .venv\\Scripts\\python.exe demo_app.py
 """
 from __future__ import annotations
@@ -28,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -41,6 +46,7 @@ sys.path.insert(0, str(REPO))
 import derainnet  # noqa: E402
 import metrics  # noqa: E402
 import model_stages  # noqa: E402
+import segment_repair  # noqa: E402
 from raindrop_paths import RAINDROP_ROOT  # noqa: E402
 from raindrop_render import RaindropRender  # noqa: E402
 
@@ -374,6 +380,55 @@ def watch_model(img: Image.Image, mode: str):
         yield [table(i + 1)] + shown()
 
 
+SEG_EXAMPLES = ASSETS / "segment_examples"
+SEG_LEGEND = (
+    "**Orange** glare (headlight and lamp bloom) · **purple** streak (light smeared on the dome, lit webs) · "
+    "**blue** raindrop · **green** person or vehicle, protected · **grey** wet road, kept as real scene (SAM 3)"
+)
+SEG_MAX_SIDE = 1400
+
+
+def segment_and_repair(img: Image.Image, use_sam3: bool = False):
+    """Streams segment_repair.py: a status table, then the instance overlay and
+    table, then the repaired frame, each as soon as it's ready."""
+    if img is None:
+        raise gr.Error("Pick an example or upload a rainy frame first.")
+    img = img.convert("RGB")
+    clean = _find_clean(img)
+    if img.width > 2000:  # the CCTV screenshots are 2x their native size
+        img = img.resize((img.width // 2, img.height // 2), Image.LANCZOS)
+    if max(img.size) > SEG_MAX_SIDE:
+        s = SEG_MAX_SIDE / max(img.size)
+        img = img.resize((round(img.width * s), round(img.height * s)), Image.LANCZOS)
+    names = segment_repair.steps(use_sam3) + ["Repair each instance with its model"]
+    times = [None] * len(names)
+    a, footer = None, ""
+
+    def status(running: int) -> str:
+        rows = []
+        for i, name in enumerate(names):
+            st = f"done in {times[i]:.1f}s" if times[i] is not None else "**running...**" if i == running else "waiting"
+            rows.append(f"| {i + 1} | {name} | {st} |")
+        return "| Step | What's happening | Status |\n|---|---|---|\n" + "\n".join(rows) + footer
+
+    yield status(0), None, None, None, None, None
+    for i, secs, a in segment_repair.analyse_steps(img, use_sam3=use_sam3):
+        times[i] = secs
+        done = i == len(names) - 2
+        yield (status(i + 1), segment_repair.overlay(a) if done else None, None,
+               segment_repair.table(a) if done else None, None, None)
+    t = time.perf_counter()
+    out = segment_repair.repair(a)
+    times[-1] = time.perf_counter() - t
+    footer = f"\n\n**Found:** {segment_repair.summary(a).split('  |')[0]}.\n\n**Total: {sum(times):.0f}s** on this laptop's CPU."
+    if clean is not None:
+        (ip, is_), (op, os_), (wp, ws) = _scores(img, clean), _scores(out, clean), _scores(a.derained, clean)
+        footer += (f"\n\n**Against the clean photo:** rainy {ip:.2f} dB / SSIM {is_:.3f} → segment & repair "
+                   f"**{op:.2f} dB / SSIM {os_:.3f}** (whole-frame ours: {wp:.2f} dB / SSIM {ws:.3f})")
+    maps = (model_stages._heatmap(torch.from_numpy(a.flare_layer)), model_stages._heatmap(torch.from_numpy(a.rain_map)))
+    yield status(-1), segment_repair.overlay(a), (img, out), segment_repair.table(a), *maps
+
+
 HEADER = """
 # Raindrop, Streak & Glare Removal for Dashcam and CCTV Footage
 Water sitting on the camera's own glass during rain: droplets that block and blur the scene,
@@ -498,11 +553,53 @@ with gr.Blocks() as demo:
                     run_deraindrop_live, [live_in, live_drn_ver], [live_drn_out, live_drn_att])
                 gr.Button("Run stock UnReflectAnything (about 1–2 minutes)").click(run_stock_live, live_in, live_out)
 
+    with gr.Tab("Segment & repair (no training)"):
+        gr.Markdown(
+            "Every defect in the frame is found as **its own instance**, then repaired by the pretrained model that "
+            "suits it. Nothing here is trained for this. Our DeRaindrop first restores the whole frame (it also "
+            "fixes faint drops too weak to find as instances); then **glare** → Flare7K++ takes it off; "
+            "**streaks** → dimmed further; **people and vehicles** (YOLO11-seg) are never softened; with SAM 3, "
+            "the **wet road** goes back to the original frame, so its reflections are kept as real scene. "
+            "About 30 seconds a frame on this laptop's CPU."
+        )
+        with gr.Row():
+            with gr.Column(scale=1):
+                seg_in = gr.Image(value=str(SEG_EXAMPLES / "1_night_headlight_glare.png")
+                                  if (SEG_EXAMPLES / "1_night_headlight_glare.png").exists() else None,
+                                  type="pil", label="Rainy frame")
+                seg_sam3 = gr.Checkbox(
+                    value=False, label="Also use SAM 3 (about 35 s more)", visible=segment_repair.SAM3_WEIGHTS.exists(),
+                    info="Finds the wet road by name and keeps it as real scene, so road reflections aren't "
+                         "repaired, and finds lens glare that Flare7K++ misses.")
+                seg_btn = gr.Button("Segment and repair", variant="primary")
+            with gr.Column(scale=1):
+                seg_status = gr.Markdown()
+        gr.Examples(
+            examples=[[str(p)] for p in sorted(SEG_EXAMPLES.glob("*.png"))] + [[str(ASSETS / "rainy" / "12.png")]],
+            inputs=[seg_in],
+            label="Real CCTV rain frames, and a real raindrop photo with a clean version (12)",
+        )
+        gr.Markdown(SEG_LEGEND)
+        with gr.Row():
+            seg_overlay = gr.Image(type="pil", label="Instances found", interactive=False)
+            seg_slider = gr.ImageSlider(type="pil", label="Before / after: drag to compare", interactive=False)
+        seg_table = gr.Dataframe(headers=["#", "Instance", "Type", "% of frame", "Score", "Repair"],
+                                 label="Every instance and the repair it got", interactive=False, wrap=True)
+        with gr.Accordion("What the models saw", open=False):
+            with gr.Row():
+                seg_flare = gr.Image(type="pil", label="Flare7K++'s glare layer", interactive=False)
+                seg_rain = gr.Image(type="pil", label="Our DeRaindrop's raindrop map", interactive=False)
+        seg_btn.click(segment_and_repair, [seg_in, seg_sam3],
+                      [seg_status, seg_overlay, seg_slider, seg_table, seg_flare, seg_rain])
+
 if __name__ == "__main__":
     # Load the model in the background now, so the first step-by-step run
-    # doesn't sit through a ~1.5 min load in front of an audience.
-    threading.Thread(target=model_stages._load, daemon=True).start()
-    if model_stages.TRAINED_WEIGHTS.exists():  # ours too (~1 min: a 2.6 GB checkpoint)
-        threading.Thread(target=model_stages._load, kwargs={"trained": True}, daemon=True).start()
+    # doesn't sit through a ~1.5 min load in front of an audience. These take
+    # ~10 GB of RAM; DEMO_PRELOAD=0 skips them (they then load on first use),
+    # leaving room for SAM 3 on a 16 GB laptop.
+    if os.environ.get("DEMO_PRELOAD", "1") != "0":
+        threading.Thread(target=model_stages._load, daemon=True).start()
+        if model_stages.TRAINED_WEIGHTS.exists():  # ours too (~1 min: a 2.6 GB checkpoint)
+            threading.Thread(target=model_stages._load, kwargs={"trained": True}, daemon=True).start()
     # The example images live in raindrop_project/, outside the repo, so Gradio must be allowed to serve them.
     demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True, allowed_paths=[str(RAINDROP_ROOT)])
