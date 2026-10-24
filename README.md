@@ -1,6 +1,6 @@
-# Rain on Glass
+# Seeing Through Wet Lenses
 
-**Removing raindrops, streaks and glare from dashcam and CCTV footage, using a model trained on synthetic rain.**
+**Synthetic Rain and Instance-Aware Repair for Dashcam and CCTV**
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![PyTorch 2.9](https://img.shields.io/badge/PyTorch-2.9-EE4C2C?logo=pytorch&logoColor=white)
@@ -8,6 +8,15 @@
 ![Status](https://img.shields.io/badge/status-research%20prototype-orange)
 
 ![A real rainy photo, our restored output and the clean photo](assets/readme/hero.jpg)
+
+## Abstract
+
+We remove raindrops, streaks and glare from dashcam and CCTV footage, which never has clean reference frames. We
+introduce VRGS, a procedural renderer that synthesises water-on-glass degradations with exact masks, and use it to
+fine-tune DeRaindrop, which then improves 7 of 18 held-out dashcam frames (the released model: none). An
+instance-segmentation pipeline (Flare7K++, YOLO11-seg, SAM 3) then finds each glare, streak, raindrop, vehicle and
+wet-road region and repairs it with a suitable model. It matches the fine-tuned model on 58 real photos (30.1 dB,
+SSIM 0.912) while visibly removing more night glare from CCTV.
 
 When it rains, water sits on the camera's own glass: the windshield in front of a dashcam, or the dome of a CCTV
 camera. Drops blur and warp the scene behind them, sliding drops leave streaks, and headlights flare through the wet
@@ -24,6 +33,10 @@ synthetic rain on glass.
 - **Training on VRGS makes a raindrop model work on dashcam/CCTV rain.** The released DeRaindrop model improves
   **0 of 18** frames of an unseen drive. Fine-tuned on VRGS for 30 minutes, it improves **7 of 18**, and still
   improves **all 58** real test photos.
+- **Instance-aware repair.** [segment_repair.py](segment_repair.py) finds every glare, streak, raindrop, person,
+  vehicle and wet-road region as its own instance (Flare7K++, our DeRaindrop, YOLO11-seg, SAM 3 text prompts) and
+  repairs each with the model that suits it: glare removed, streaks dimmed, the wet road and its reflections kept.
+  It scores 30.08 dB / SSIM 0.912 on the 58 real photos, level with the fine-tune alone (30.11 / 0.912).
 - **A diagnosed failure in the base model.** UnReflectAnything's released inpainter was trained with an inverted mask,
   so on raindrops it darkens drops instead of removing them.
 - **Fast enough to use.** 0.87 s per image on a laptop RTX 4060 (52.9 s on a laptop CPU). VRGS renders 10–18× faster
@@ -32,6 +45,7 @@ synthetic rain on glass.
 
 ## Contents
 
+- [Abstract](#abstract)
 - [The problem](#the-problem)
 - [How it works](#how-it-works)
 - [Results](#results)
@@ -277,6 +291,8 @@ For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file
 | [raindrop_engine.py](raindrop_engine.py), [train_raindrop.py](train_raindrop.py), [config/raindrop_train.yaml](config/raindrop_train.yaml) | Training the detector and inpainter with VRGS (8 GB GPU, 448 px) |
 | [download_kitti.py](download_kitti.py), [prerender_vrgs.py](prerender_vrgs.py) | More KITTI drives; the cached VRGS training set |
 | [eval_all.py](eval_all.py), [eval_lama.py](eval_lama.py), [benchmark_efficiency.py](benchmark_efficiency.py) | Evaluation and efficiency measurements; results in [eval_results/](eval_results) |
+| [segment_repair.py](segment_repair.py), [eval_segment_repair.py](eval_segment_repair.py) | Instance-aware repair (Flare7K++, YOLO11-seg, SAM 3) and its score on the real photos |
+| [eval_defects.py](eval_defects.py), [defects_viewer.py](defects_viewer.py) | Every model on 133 real CCTV rain frames: comparison sheets and a local image viewer |
 | [demo_app.py](demo_app.py), [run_demo.bat](run_demo.bat) | The Gradio demo |
 | [raindrop_paths.py](raindrop_paths.py) | Where the data folder is |
 | `engine.py`, `main.py`, `models.py`, `token_inpainters.py`, `losses.py`, `dataset/`, `utilities/` | Training framework from UnReflectAnything, adapted |
@@ -290,6 +306,8 @@ For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file
 - [x] Baselines, the inverted-inpainter diagnosis, neighbour fill and LaMa fill
 - [x] DeRaindrop fine-tuned on VRGS: the first model that improves dashcam/CCTV rain
 - [x] First GPU training of our detector and inpainter; one evaluation of every method
+- [x] Instance-aware repair: glare, streaks, drops, people/vehicles and the wet road found separately (SAM 3)
+- [x] A real CCTV test set (133 frames, 32 scenarios) with comparison sheets and a viewer
 - [ ] Sharper, in-focus VRGS drops, so our detector transfers to real photos
 - [ ] Keep the fine-tune's real-photo score (lower learning rate, more real pairs)
 - [ ] Restore see-through drops and repaint only opaque ones
@@ -305,6 +323,9 @@ For training, set `DATASET_DIR` to `raindrop_project/organized` in a `.env` file
   Raindrop Removal from a Single Image*, CVPR 2018.
 - **DINOv3** (Meta), used under the DINOv3 License, see [LICENSE_DINO.txt](LICENSE_DINO.txt).
 - **LaMa**: R. Suvorov et al., *Resolution-robust Large Mask Inpainting with Fourier Convolutions*, WACV 2022.
+- **Flare7K++**: Y. Dai et al., *Flare7K: A Phenomenological Nighttime Flare Removal Dataset*, NeurIPS 2022, and
+  *Flare7K++*, 2023. S-Lab License (non-commercial).
+- **SAM 3** (Meta, 2025), used under the SAM License; **YOLO11** (Ultralytics), AGPL-3.0.
 - Droplet optics follow M. Roser and A. Geiger, *Video-based Raindrop Detection for Improved Image Registration*,
   ICCV Workshops 2009.
 - Glare assets: Y. Dai et al., *Flare7K*, NeurIPS 2022. Driving footage: A. Geiger, P. Lenz, R. Urtasun, *KITTI*,
