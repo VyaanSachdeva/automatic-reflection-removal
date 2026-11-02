@@ -1,5 +1,6 @@
 """
-Review-2 demo for the raindrop/streak/glare removal project.
+Demo for Seeing Through Wet Lenses: removing raindrops, streaks and glare from
+dashcam and CCTV footage.
 
 Tab 1 runs VRGS (raindrop_render.py) live: add synthetic water-on-glass
 degradation to a clean driving frame.
@@ -14,12 +15,11 @@ either the released inpainter or neighbour fill (model_stages.neighbour_fill),
 and DeRaindrop itself (derainnet.py), the open-source raindrop-specific
 baseline. Outputs are precomputed (UnReflectAnything takes ~1-2 min/image on
 CPU) into DEMO_ASSETS/{stock,drnmask,drnfill,gtfill,deraindrop}_output;
-DeRaindrop is fast enough (~10 s) to also run live. Our own raindrop-trained
-model isn't shown yet -- it needs the GPU training run.
+DeRaindrop is fast enough (~10 s) to also run live.
 
-"Segment & repair" runs segment_repair.py live: every glare, streak, raindrop
-and person/vehicle instance found by pretrained models, each repaired by the
-model that suits it, with no training for this pipeline.
+"Segment & repair" runs segment_repair.py live: every glare, streak, raindrop,
+person/vehicle and (with SAM 3) wet-road instance found separately, and repaired
+by the model that suits it.
 
 Run:  .venv\\Scripts\\python.exe demo_app.py
 """
@@ -430,7 +430,9 @@ def segment_and_repair(img: Image.Image, use_sam3: bool = False):
 
 
 HEADER = """
-# Raindrop, Streak & Glare Removal for Dashcam and CCTV Footage
+# Seeing Through Wet Lenses
+Synthetic rain and instance-aware repair for dashcam and CCTV footage.
+
 Water sitting on the camera's own glass during rain: droplets that block and blur the scene,
 streaks left as they slide, and glare around headlights and streetlights.
 This project adapts UnReflectAnything (CVPR 2026) to that problem.
@@ -557,7 +559,7 @@ with gr.Blocks() as demo:
         gr.Markdown(
             "Every defect in the frame is found as **its own instance**, then repaired by the pretrained model that "
             "suits it. Nothing here is trained for this. Our DeRaindrop first restores the whole frame (it also "
-            "fixes faint drops too weak to find as instances); then **glare** → Flare7K++ takes it off; "
+            "fixes faint drops too weak to find as instances); then **glare** → reduced further with Flare7K++; "
             "**streaks** → dimmed further; **people and vehicles** (YOLO11-seg) are never softened; with SAM 3, "
             "the **wet road** goes back to the original frame, so its reflections are kept as real scene. "
             "About 30 seconds a frame on this laptop's CPU."

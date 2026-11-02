@@ -205,7 +205,7 @@ function render() {
     legend.innerHTML = `<b>Instances found</b> (new pipeline, no training):<br><i style="background:#ffaa1e"></i>glare<br>
       <i style="background:#c85aff"></i>streak: light smeared on the dome, lit webs<br><i style="background:#28aaff"></i>raindrop<br>
       <i style="background:#3cdc5a"></i>person or vehicle, protected<br><i style="background:#96a0af"></i>wet road, kept as real scene (SAM 3)<br><br>
-      <b>New: segment &amp; repair</b> = our DeRaindrop on the whole frame, then Flare7K++ takes the glare off,
+      <b>New: segment &amp; repair</b> = our DeRaindrop on the whole frame, then glare is reduced further with Flare7K++,
       streaks are dimmed and the wet road is kept from the original.<br><br>No clean version of this footage exists, so the
       numbers describe what each model did: change (0-255), sharpness and contrast relative to the input.`;
     stage.append(pane(im.base, "Rainy input", "", ""), pane(im.inst, "Instances found", "seg", ""),
