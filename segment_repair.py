@@ -36,7 +36,7 @@ Optional, use_sam3=True: SAM 3 (Meta, 2025) segments concepts named in text.
 
 Repairs (repair()), by default a hybrid: our DeRaindrop restores the whole
 frame (it also fixes faint drops too weak to be found as instances), then glare
--> the glare Flare7K++ removes is taken off, streaks -> dimmed further (not on
+-> the darker of that restore and Flare7K++'s frame, streaks -> dimmed further (not on
 people or vehicles), wet road -> back to the original frame. Each is blended in
 with a soft edge. repair(whole_frame=False) repairs only the instances and
 leaves the rest of the frame exactly as it was.
@@ -419,7 +419,7 @@ REPAIRS = {
 # repair(whole_frame=True): DeRaindrop restores the whole frame first
 REPAIRS_HYBRID = REPAIRS | {
     "drop": "our DeRaindrop restore (applied to the whole frame)",
-    "glare": "Flare7K++ glare removal, on top of the restore",
+    "glare": "darker of the restore and Flare7K++'s glare removal",
     "object": "restored, but never softened",
     "road": "kept as the original frame: real scene",
 }
@@ -446,7 +446,9 @@ def repair(a: Analysis, whole_frame: bool = True) -> Image.Image:
     drops too weak to be found as instances (58 real photos: 30.1 dB whole
     frame vs 28.1 dB repairing found drops only). Then:
       streaks -> dimmed further toward the darker restoration (below)
-      glare   -> the glare Flare7K++ removes, taken off the restored frame
+      glare   -> the darker of the restore and Flare7K++'s frame at each pixel. The
+                 restore already dims glare, so taking Flare7K++'s removal off it
+                 as well would remove it twice and leave dark patches around lights
       road    -> back to the original frame (SAM 3's wet road: real scene)
     whole_frame=False: start from the original frame and repair only the instances:
       drops   -> our DeRaindrop's restored frame (it recovers what's behind the water)
@@ -476,8 +478,9 @@ def repair(a: Analysis, whole_frame: bool = True) -> Image.Image:
     if whole_frame:
         out = derained.copy()
         out = out * (1 - w_streak) + np.minimum(darker, out) * w_streak
-        out = out * (1 - w_glare) + np.clip(out - (x - flare_free), 0, 255) * w_glare
-        w = _soft(by_kind["road"], shape, FEATHER["road"])
+        out = out * (1 - w_glare) + np.minimum(darker, out) * w_glare
+        # The kept road fades out where glare is removed, so it leaves no bright edge against the dimmed area
+        w = _soft(by_kind["road"], shape, FEATHER["road"]) * (1 - w_glare)
         out = out * (1 - w) + x * w
     else:
         out = x.copy()

@@ -23,6 +23,13 @@
    "beats_input": 58,
    "beats_whole_frame_psnr": 12,
    "beats_whole_frame_ssim": 0
+  },
+  "hybrid + SAM 3": {
+   "psnr": 30.01,
+   "ssim": 0.911,
+   "beats_input": 58,
+   "beats_whole_frame_psnr": 14,
+   "beats_whole_frame_ssim": 0
   }
  },
  "photos": [
@@ -43,6 +50,10 @@
    "segment & repair, hybrid": {
     "psnr": 31.508,
     "ssim": 0.9447
+   },
+   "hybrid + SAM 3": {
+    "psnr": 31.464,
+    "ssim": 0.9437
    }
   },
   {
@@ -62,6 +73,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.396,
     "ssim": 0.9075
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.396,
+    "ssim": 0.9075
    }
   },
   {
@@ -79,8 +94,12 @@
     "ssim": 0.8782
    },
    "segment & repair, hybrid": {
-    "psnr": 28.202,
-    "ssim": 0.9119
+    "psnr": 28.191,
+    "ssim": 0.9118
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.191,
+    "ssim": 0.9118
    }
   },
   {
@@ -100,6 +119,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.987,
     "ssim": 0.9006
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.988,
+    "ssim": 0.9006
    }
   },
   {
@@ -117,6 +140,10 @@
     "ssim": 0.8778
    },
    "segment & repair, hybrid": {
+    "psnr": 32.83,
+    "ssim": 0.9176
+   },
+   "hybrid + SAM 3": {
     "psnr": 32.83,
     "ssim": 0.9176
    }
@@ -138,6 +165,10 @@
    "segment & repair, hybrid": {
     "psnr": 31.11,
     "ssim": 0.9324
+   },
+   "hybrid + SAM 3": {
+    "psnr": 31.086,
+    "ssim": 0.9323
    }
   },
   {
@@ -155,6 +186,10 @@
     "ssim": 0.8557
    },
    "segment & repair, hybrid": {
+    "psnr": 31.386,
+    "ssim": 0.9022
+   },
+   "hybrid + SAM 3": {
     "psnr": 31.386,
     "ssim": 0.9022
    }
@@ -176,6 +211,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.17,
     "ssim": 0.8863
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.17,
+    "ssim": 0.8863
    }
   },
   {
@@ -195,6 +234,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.296,
     "ssim": 0.9061
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.823,
+    "ssim": 0.8955
    }
   },
   {
@@ -212,6 +255,10 @@
     "ssim": 0.8821
    },
    "segment & repair, hybrid": {
+    "psnr": 29.669,
+    "ssim": 0.9142
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.669,
     "ssim": 0.9142
    }
@@ -233,6 +280,10 @@
    "segment & repair, hybrid": {
     "psnr": 32.179,
     "ssim": 0.9549
+   },
+   "hybrid + SAM 3": {
+    "psnr": 32.179,
+    "ssim": 0.9549
    }
   },
   {
@@ -250,8 +301,12 @@
     "ssim": 0.916
    },
    "segment & repair, hybrid": {
-    "psnr": 29.339,
-    "ssim": 0.9337
+    "psnr": 29.37,
+    "ssim": 0.9336
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.367,
+    "ssim": 0.9335
    }
   },
   {
@@ -269,8 +324,12 @@
     "ssim": 0.8942
    },
    "segment & repair, hybrid": {
-    "psnr": 28.75,
-    "ssim": 0.9197
+    "psnr": 28.782,
+    "ssim": 0.9198
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.782,
+    "ssim": 0.9198
    }
   },
   {
@@ -288,6 +347,10 @@
     "ssim": 0.9099
    },
    "segment & repair, hybrid": {
+    "psnr": 31.005,
+    "ssim": 0.9259
+   },
+   "hybrid + SAM 3": {
     "psnr": 31.005,
     "ssim": 0.9259
    }
@@ -309,6 +372,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.88,
     "ssim": 0.906
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.884,
+    "ssim": 0.906
    }
   },
   {
@@ -326,6 +393,10 @@
     "ssim": 0.8495
    },
    "segment & repair, hybrid": {
+    "psnr": 30.212,
+    "ssim": 0.8881
+   },
+   "hybrid + SAM 3": {
     "psnr": 30.212,
     "ssim": 0.8881
    }
@@ -347,6 +418,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.432,
     "ssim": 0.8482
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.432,
+    "ssim": 0.8482
    }
   },
   {
@@ -364,6 +439,10 @@
     "ssim": 0.8937
    },
    "segment & repair, hybrid": {
+    "psnr": 29.218,
+    "ssim": 0.9225
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.218,
     "ssim": 0.9225
    }
@@ -385,6 +464,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.992,
     "ssim": 0.8965
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.992,
+    "ssim": 0.8965
    }
   },
   {
@@ -404,6 +487,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.963,
     "ssim": 0.8754
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.31,
+    "ssim": 0.8699
    }
   },
   {
@@ -421,8 +508,12 @@
     "ssim": 0.8926
    },
    "segment & repair, hybrid": {
-    "psnr": 29.699,
-    "ssim": 0.918
+    "psnr": 29.701,
+    "ssim": 0.9179
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.701,
+    "ssim": 0.9179
    }
   },
   {
@@ -442,6 +533,10 @@
    "segment & repair, hybrid": {
     "psnr": 28.776,
     "ssim": 0.8988
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.776,
+    "ssim": 0.8988
    }
   },
   {
@@ -459,7 +554,11 @@
     "ssim": 0.8941
    },
    "segment & repair, hybrid": {
-    "psnr": 30.853,
+    "psnr": 30.848,
+    "ssim": 0.9118
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.848,
     "ssim": 0.9118
    }
   },
@@ -478,6 +577,10 @@
     "ssim": 0.9023
    },
    "segment & repair, hybrid": {
+    "psnr": 31.595,
+    "ssim": 0.9185
+   },
+   "hybrid + SAM 3": {
     "psnr": 31.595,
     "ssim": 0.9185
    }
@@ -499,6 +602,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.817,
     "ssim": 0.9121
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.817,
+    "ssim": 0.9121
    }
   },
   {
@@ -516,8 +623,12 @@
     "ssim": 0.87
    },
    "segment & repair, hybrid": {
-    "psnr": 29.664,
-    "ssim": 0.8843
+    "psnr": 29.694,
+    "ssim": 0.8846
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.694,
+    "ssim": 0.8846
    }
   },
   {
@@ -535,6 +646,10 @@
     "ssim": 0.8999
    },
    "segment & repair, hybrid": {
+    "psnr": 29.638,
+    "ssim": 0.9173
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.638,
     "ssim": 0.9173
    }
@@ -556,6 +671,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.384,
     "ssim": 0.9043
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.384,
+    "ssim": 0.9043
    }
   },
   {
@@ -573,6 +692,10 @@
     "ssim": 0.9153
    },
    "segment & repair, hybrid": {
+    "psnr": 29.28,
+    "ssim": 0.9349
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.28,
     "ssim": 0.9349
    }
@@ -594,6 +717,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.106,
     "ssim": 0.9003
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.106,
+    "ssim": 0.9003
    }
   },
   {
@@ -611,6 +738,10 @@
     "ssim": 0.8943
    },
    "segment & repair, hybrid": {
+    "psnr": 28.524,
+    "ssim": 0.9122
+   },
+   "hybrid + SAM 3": {
     "psnr": 28.524,
     "ssim": 0.9122
    }
@@ -632,6 +763,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.475,
     "ssim": 0.8893
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.475,
+    "ssim": 0.8893
    }
   },
   {
@@ -649,8 +784,12 @@
     "ssim": 0.8969
    },
    "segment & repair, hybrid": {
-    "psnr": 30.442,
-    "ssim": 0.923
+    "psnr": 30.502,
+    "ssim": 0.9232
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.502,
+    "ssim": 0.9232
    }
   },
   {
@@ -668,6 +807,10 @@
     "ssim": 0.9084
    },
    "segment & repair, hybrid": {
+    "psnr": 30.008,
+    "ssim": 0.9279
+   },
+   "hybrid + SAM 3": {
     "psnr": 30.008,
     "ssim": 0.9279
    }
@@ -689,6 +832,10 @@
    "segment & repair, hybrid": {
     "psnr": 32.55,
     "ssim": 0.9515
+   },
+   "hybrid + SAM 3": {
+    "psnr": 32.55,
+    "ssim": 0.9515
    }
   },
   {
@@ -708,6 +855,10 @@
    "segment & repair, hybrid": {
     "psnr": 34.028,
     "ssim": 0.9292
+   },
+   "hybrid + SAM 3": {
+    "psnr": 33.862,
+    "ssim": 0.9287
    }
   },
   {
@@ -725,6 +876,10 @@
     "ssim": 0.8798
    },
    "segment & repair, hybrid": {
+    "psnr": 29.906,
+    "ssim": 0.8936
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.906,
     "ssim": 0.8936
    }
@@ -746,6 +901,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.493,
     "ssim": 0.9158
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.493,
+    "ssim": 0.9158
    }
   },
   {
@@ -763,8 +922,12 @@
     "ssim": 0.8939
    },
    "segment & repair, hybrid": {
-    "psnr": 28.055,
-    "ssim": 0.9265
+    "psnr": 28.009,
+    "ssim": 0.9261
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.009,
+    "ssim": 0.9261
    }
   },
   {
@@ -784,6 +947,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.22,
     "ssim": 0.9423
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.221,
+    "ssim": 0.9422
    }
   },
   {
@@ -801,6 +968,10 @@
     "ssim": 0.9053
    },
    "segment & repair, hybrid": {
+    "psnr": 29.136,
+    "ssim": 0.9236
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.136,
     "ssim": 0.9236
    }
@@ -822,6 +993,10 @@
    "segment & repair, hybrid": {
     "psnr": 33.011,
     "ssim": 0.94
+   },
+   "hybrid + SAM 3": {
+    "psnr": 33.011,
+    "ssim": 0.94
    }
   },
   {
@@ -839,8 +1014,12 @@
     "ssim": 0.8804
    },
    "segment & repair, hybrid": {
-    "psnr": 30.817,
-    "ssim": 0.9076
+    "psnr": 30.832,
+    "ssim": 0.9078
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.832,
+    "ssim": 0.9078
    }
   },
   {
@@ -860,6 +1039,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.558,
     "ssim": 0.9051
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.256,
+    "ssim": 0.8892
    }
   },
   {
@@ -877,7 +1060,11 @@
     "ssim": 0.9024
    },
    "segment & repair, hybrid": {
-    "psnr": 31.749,
+    "psnr": 31.752,
+    "ssim": 0.9148
+   },
+   "hybrid + SAM 3": {
+    "psnr": 31.752,
     "ssim": 0.9148
    }
   },
@@ -896,8 +1083,12 @@
     "ssim": 0.8844
    },
    "segment & repair, hybrid": {
-    "psnr": 29.21,
-    "ssim": 0.8997
+    "psnr": 29.232,
+    "ssim": 0.8998
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.576,
+    "ssim": 0.8954
    }
   },
   {
@@ -917,6 +1108,10 @@
    "segment & repair, hybrid": {
     "psnr": 28.865,
     "ssim": 0.8967
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.865,
+    "ssim": 0.8967
    }
   },
   {
@@ -934,7 +1129,11 @@
     "ssim": 0.9028
    },
    "segment & repair, hybrid": {
-    "psnr": 29.992,
+    "psnr": 30.0,
+    "ssim": 0.9146
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.0,
     "ssim": 0.9146
    }
   },
@@ -953,8 +1152,12 @@
     "ssim": 0.8635
    },
    "segment & repair, hybrid": {
-    "psnr": 30.13,
-    "ssim": 0.8816
+    "psnr": 30.154,
+    "ssim": 0.8817
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.154,
+    "ssim": 0.8817
    }
   },
   {
@@ -972,6 +1175,10 @@
     "ssim": 0.9139
    },
    "segment & repair, hybrid": {
+    "psnr": 29.983,
+    "ssim": 0.9399
+   },
+   "hybrid + SAM 3": {
     "psnr": 29.983,
     "ssim": 0.9399
    }
@@ -993,6 +1200,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.707,
     "ssim": 0.9024
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.707,
+    "ssim": 0.9024
    }
   },
   {
@@ -1012,6 +1223,10 @@
    "segment & repair, hybrid": {
     "psnr": 27.255,
     "ssim": 0.9112
+   },
+   "hybrid + SAM 3": {
+    "psnr": 27.255,
+    "ssim": 0.9112
    }
   },
   {
@@ -1029,7 +1244,11 @@
     "ssim": 0.8722
    },
    "segment & repair, hybrid": {
-    "psnr": 28.126,
+    "psnr": 28.13,
+    "ssim": 0.8941
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.13,
     "ssim": 0.8941
    }
   },
@@ -1048,7 +1267,11 @@
     "ssim": 0.8678
    },
    "segment & repair, hybrid": {
-    "psnr": 29.318,
+    "psnr": 29.314,
+    "ssim": 0.9113
+   },
+   "hybrid + SAM 3": {
+    "psnr": 29.314,
     "ssim": 0.9113
    }
   },
@@ -1069,6 +1292,10 @@
    "segment & repair, hybrid": {
     "psnr": 29.088,
     "ssim": 0.9201
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.63,
+    "ssim": 0.9141
    }
   },
   {
@@ -1086,8 +1313,12 @@
     "ssim": 0.909
    },
    "segment & repair, hybrid": {
-    "psnr": 28.932,
-    "ssim": 0.923
+    "psnr": 28.903,
+    "ssim": 0.9228
+   },
+   "hybrid + SAM 3": {
+    "psnr": 28.903,
+    "ssim": 0.9228
    }
   },
   {
@@ -1107,6 +1338,10 @@
    "segment & repair, hybrid": {
     "psnr": 30.778,
     "ssim": 0.8908
+   },
+   "hybrid + SAM 3": {
+    "psnr": 30.777,
+    "ssim": 0.8908
    }
   },
   {
@@ -1124,6 +1359,10 @@
     "ssim": 0.8948
    },
    "segment & repair, hybrid": {
+    "psnr": 31.777,
+    "ssim": 0.9077
+   },
+   "hybrid + SAM 3": {
     "psnr": 31.777,
     "ssim": 0.9077
    }
