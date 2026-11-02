@@ -1,6 +1,6 @@
 ==================================================================================
 
-  RAIN ON GLASS  ·  raindrop, streak and glare removal for dashcam and CCTV
+  AUTOMATIC REFLECTION REMOVAL FROM RAINY IMAGES  ·  dashcam and CCTV
 
   Training data: VRGS (Virtual Raindrop-Glare Synthesis)
   Model: detect -> repair in DINOv3 feature space -> decode

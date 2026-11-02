@@ -1,6 +1,6 @@
-# Seeing Through Wet Lenses
+# Automatic Reflection Removal from Rainy Images
 
-**Synthetic Rain and Instance-Aware Repair for Dashcam and CCTV**
+**Removing raindrops, streaks and glare from dashcam and CCTV footage with synthetic rain and instance-aware repair.**
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![PyTorch 2.9](https://img.shields.io/badge/PyTorch-2.9-EE4C2C?logo=pytorch&logoColor=white)
@@ -304,8 +304,8 @@ To use SAM 3 on a 16 GB laptop, skip that with `set DEMO_PRELOAD=0` and start wi
 Windows with Python 3.12:
 
 ```bat
-git clone https://github.com/VyaanSachdeva/rain-on-glass.git
-cd rain-on-glass
+git clone https://github.com/VyaanSachdeva/automatic-reflection-removal.git
+cd automatic-reflection-removal
 python -m venv .venv
 .venv\Scripts\activate
 rem PyTorch first (pick one):

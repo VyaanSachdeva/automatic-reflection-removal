@@ -1,6 +1,6 @@
 """
-Demo for Seeing Through Wet Lenses: removing raindrops, streaks and glare from
-dashcam and CCTV footage.
+Demo for Automatic Reflection Removal from Rainy Images: removing raindrops, streaks and
+glare from dashcam and CCTV footage.
 
 Tab 1 runs VRGS (raindrop_render.py) live: add synthetic water-on-glass
 degradation to a clean driving frame.
@@ -430,7 +430,7 @@ def segment_and_repair(img: Image.Image, use_sam3: bool = False):
 
 
 HEADER = """
-# Seeing Through Wet Lenses
+# Automatic Reflection Removal from Rainy Images
 Synthetic rain and instance-aware repair for dashcam and CCTV footage.
 
 Water sitting on the camera's own glass during rain: droplets that block and blur the scene,
