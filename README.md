@@ -7,8 +7,6 @@
 ![CUDA optional](https://img.shields.io/badge/GPU-optional-76B900?logo=nvidia&logoColor=white)
 ![Status](https://img.shields.io/badge/status-research%20prototype-orange)
 
-![A rainy CCTV frame, every defect found as an instance, and the repaired frame](assets/readme/hero_cctv.jpg)
-
 ## Abstract
 
 We remove raindrops, streaks and glare from dashcam and CCTV footage, which never has clean reference frames. We
@@ -139,6 +137,8 @@ a reflection on a wet road is real scene and should stay. So each one is found s
 
 SAM 3 is optional. Each repair blends in with a soft edge scaled to the region's size, and black-and-white night
 footage stays black-and-white.
+
+![A rainy CCTV frame, every defect found as an instance, and the repaired frame](assets/readme/hero_cctv.jpg)
 
 ## Results
 
